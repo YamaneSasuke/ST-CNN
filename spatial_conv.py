@@ -17,49 +17,59 @@ from chainer import cuda, optimizers, serializers
 import chainer.functions as F
 import chainer.links as L
 
+import cupy as cp
+
 from dataset import Dataset
 import dataset
+from links import CBR
+from links import CBRnd
 
-
-class SpatialNet(chainer.Chain):
-
-    """
-    VGGNet
-    - It takes (224, 224, 3) sized image as imput
-    """
-
+class SpatialConv(chainer.Chain):
     def __init__(self):
-        super(SpatialNet, self).__init__(
-            conv1=L.Convolution2D(6, 64, 3, stride=1, pad=1),
-            conv2=L.Convolution2D(64, 96, 3, stride=1, pad=1),
-            conv3=L.Convolution2D(96, 128, 3, stride=1, pad=1),
-
-            bn1=L.BatchNormalization(64),
-            bn2=L.BatchNormalization(96),
-            bn3=L.BatchNormalization(128),
-
-            fc4=L.Linear(3200, 256),
-            fc5=L.Linear(256, 18),
+        super(SpatialConv, self).__init__(
+            cbr1=CBR(4, 32, ksize=3, pad=1),
+            cbr2= CBR(32, 64, ksize=3, pad=1),
+            cbr3= CBR(64, 128, ksize=3, pad=1),
+            fc1=L.Linear(None, 256),
+            fc2=L.Linear(256, 18)
         )
-        self.train = False
 
     def __call__(self, x):
-        h = F.relu(self.bn1(self.conv1(x)))
+        h = self.cbr1(x)
         h = F.max_pooling_2d(h, 3)
-        h = F.relu(self.bn2(self.conv2(h)))
+        h = self.cbr2(h)
         h = F.max_pooling_2d(h, 3)
-        h = F.relu(self.bn3(self.conv3(h)))
+        h = self.cbr3(h)
         h = F.max_pooling_2d(h, 3)
-        h = self.fc4(h)
+        h = F.relu(self.fc4(h))
+        h = F.dropout(h)
         y = self.fc5(h)
         return y
 
-    def forward(self, x):
-        y = self(x)
+class TemporalConv(chainer.Chain):
+    def __init__(self):
+        super(TemporalConv, self).__init__(
+            cbrnd1=CBRnd(2, 1, 18, (20, 18))
+        )
+
+    def __call__(self, x):
+        y = self.cbrnd1(x)
+        return y
+
+class STConv(chainer.Chain):
+    def __init__(self):
+        super(STConv, self).__init__(
+            spatial=SpatialConv(),
+            temporal=TemporalConv()
+        )
+
+    def __call__(self, x):
+        h = self.spatial(x)
+        y = self.temporal(h)
         return y
 
     def lossfun(self, x, t):
-        y = self.forward(x)
+        y = self(x)
         loss = F.softmax_cross_entropy(y, t)
         accuracy = F.accuracy(y, t)
         return loss, accuracy
@@ -85,7 +95,7 @@ class SpatialNet(chainer.Chain):
 
     def predict(self, x):
         with chainer.using_config('train', False):
-            y = self.forward(x)
+            y = self(x)
         return F.softmax(y)
 
 
@@ -101,7 +111,7 @@ if __name__ == '__main__':
 
     # 超パラメータ
     max_iteration = 1500000  # 繰り返し回数
-    batch_size = 200
+    batch_size = 300
     num_train = 40  # 学習データ数
     num_valid = 5  # 検証データ数
     learning_rate = 0.00003  # 学習率
@@ -112,9 +122,13 @@ if __name__ == '__main__':
     video_pathes = dataset.create_path_list(video_root_dir)
     anno_pathes = dataset.create_path_list(anno_root_dir)
     time_pathes = dataset.create_path_list(time_root_dir)
+    permu = np.random.permutation(len(video_pathes))
+    video_pathes = dataset.list_shuffule(video_pathes, permu)
+    anno_pathes = dataset.list_shuffule(anno_pathes, permu)
+    time_pathes = dataset.list_shuffule(time_pathes, permu)
     train_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 0, 40)
     valid_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 40, 45)
-    test_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 45, 50)
+    test_data = Dataset(1, video_pathes, anno_pathes, time_pathes, 45, 50)
 
     # 学習結果保存場所
     output_location = r'C:\Users\yamane\OneDrive\M1\SpatialNet'
@@ -135,7 +149,7 @@ if __name__ == '__main__':
     accuracy_filename = os.path.join(output_root_dir, accuracy_filename)
 
     # モデル読み込み
-    model = SpatialNet().to_gpu()
+    model = SpatialConv().to_gpu()
     # Optimizerの設定
     optimizer = optimizers.Adam(learning_rate)
     optimizer.setup(model)
@@ -191,9 +205,23 @@ if __name__ == '__main__':
             print("accuracy[valid]:", accuracy_valid)
             print("accuracy[valid_best]:", accuracy_valid_best)
             print("epoch[valid_best]:", epoch__loss_best)
+            x, t, finish = next(test_data)
+            permu = np.random.permutation(len(x))
+            x = x.astype('f')
+            x = cuda.to_gpu(x)
+            t = cuda.to_gpu(t)
+            y = model_best.predict(x)
+            print('y', test_data.class_uniq[int(cp.argmax(y.data[0]))])
+            print('t', test_data.class_uniq[t[0]])
+            plt.subplot(121)
+            plt.imshow(np.transpose(cuda.to_cpu(x[0]), (1, 2, 0))[:, :, :3])
+            plt.subplot(122)
+            plt.imshow(np.transpose(cuda.to_cpu(x[0]), (1, 2, 0))[:, :, 3])
+            plt.gray()
+            plt.show()
 
             if (epoch % 10) == 0:
-                plt.figure(figsize=(16, 12))
+#                plt.figure(figsize=(16, 12))
                 plt.plot(epoch_loss)
                 plt.plot(epoch_valid_loss)
                 plt.title("loss")
@@ -201,7 +229,7 @@ if __name__ == '__main__':
                 plt.grid()
                 plt.show()
 
-                plt.figure(figsize=(16, 12))
+#                plt.figure(figsize=(16, 12))
                 plt.plot(epoch_accuracy)
                 plt.plot(epoch_valid_accuracy)
                 plt.title("accuracy")
@@ -212,7 +240,7 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print("割り込み停止が実行されました")
 
-    plt.figure(figsize=(16, 12))
+#    plt.figure(figsize=(16, 12))
     plt.plot(epoch_loss)
     plt.plot(epoch_valid_loss)
     plt.title("loss")
@@ -221,7 +249,7 @@ if __name__ == '__main__':
     plt.savefig(loss_filename)
     plt.show()
 
-    plt.figure(figsize=(16, 12))
+#    plt.figure(figsize=(16, 12))
     plt.plot(epoch_accuracy)
     plt.plot(epoch_valid_accuracy)
     plt.title("accuracy")
@@ -234,12 +262,20 @@ if __name__ == '__main__':
 
     for data in test_data:
         x, t, finish = data
+        permu = np.random.permutation(len(x))
         x = x.astype('f')
-        x = cuda.to_gpu(x)
+        x = cuda.to_gpu(x[permu])
+        t = t[permu]
         y = model_best.predict(x)
         print('test_num:', i)
-        print('y', y.data[0])
-        print('t', t[0])
+        print('y', test_data.class_uniq[int(cp.argmax(y.data[0]))])
+        print('t', test_data.class_uniq[t[0]])
+        plt.subplot(121)
+        plt.imshow(np.transpose(cuda.to_cpu(x[0]), (1, 2, 0))[:, :, :3])
+        plt.subplot(122)
+        plt.imshow(np.transpose(cuda.to_cpu(x[0]), (1, 2, 0))[:, :, 3])
+        plt.gray()
+        plt.show()
         i += 1
         if finish is True:
             break
