@@ -30,9 +30,9 @@ class Dataset(object):
 
     def __next__(self):
         self.finish = False
-        num_frame = 0
+        i = 0
         # モーションの残存期間(sec)
-        DURATION = 2.0
+        DURATION = 1.0
         batches = []
         targets = []
 
@@ -43,15 +43,14 @@ class Dataset(object):
 
         # ビデオのフレーム数を取得
         cap = cv2.VideoCapture(self.video_pathes[self.i])
-        # フレーム数を取得
-        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        # フレームレートを取得
+        frame_rate = cap.get(cv2.CAP_PROP_FPS)
+        quater_frame_rate = int(frame_rate / 4)
         ret, frame = cap.read()
         frame_pre = frame.copy()
         # motion_historyの初期値
         height, width, channels = frame.shape
         motion_history = np.zeros((height, width), np.float32)
-        # 取得するフレーム番号をランダムに決定
-        index = np.random.randint(0, frame_count, self.batch_size)
         while(ret):
             # フレーム間の差分計算
             color_diff = cv2.absdiff(frame, frame_pre)
@@ -63,26 +62,26 @@ class Dataset(object):
             proc_time = time.clock()
             # モーション履歴画像の更新
             cv2.motempl.updateMotionHistory(black_diff, motion_history, proc_time, DURATION)
-
-            if num_frame in index:
+            if (i % quater_frame_rate) == 0:
                 # 古いモーションの表示を経過時間に応じて薄くする
                 hist_color = np.array(np.clip((motion_history - (proc_time - DURATION)) / DURATION, 0, 1) * 255, np.uint8)
                 # グレースケール変換
-                hist_gray = cv2.cvtColor(hist_color, cv2.COLOR_GRAY2BGR)
+    #                hist_gray = cv2.cvtColor(hist_color, cv2.COLOR_GRAY2BGR)
+                hist_gray = hist_color
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frame_rgb = cv2.resize(frame_rgb, (112, 112))
-                hist_gray = cv2.resize(hist_gray, (112, 112))
+                frame_rgb = cv2.resize(frame_rgb, (128, 128))
+                hist_gray = cv2.resize(hist_gray, (128, 128))
+                frame_rgb = crop_108(frame_rgb)
+                hist_gray = crop_108(hist_gray)
+                hist_gray = hist_gray.reshape(108, 108, 1)
                 image = np.concatenate((frame_rgb, hist_gray), axis=2)
                 batches.append(image)
-                targets.append(target_list[num_frame])
-
-            if len(batches) == self.batch_size:
-                break
+                targets.append(target_list[i])
 
             # 次のフレームの読み込み
             frame_pre = frame.copy()
             ret, frame = cap.read()
-            num_frame += 1
+            i += 1
 
         # 終了処理
         cv2.destroyAllWindows()
@@ -98,7 +97,8 @@ class Dataset(object):
         if self.i == self.video_num:
             self.i = 0
             self.finish = True
-        return batches, targets, self.finish
+        index = np.random.randint(0, len(batches)- self.batch_size)
+        return batches[index: index + self.batch_size], targets[index: index + self.batch_size], self.finish
 
     def create_class_uniq(self):
         class_uniq = []
@@ -149,6 +149,23 @@ def create_path_list(dataset_root_dir):
             path_list.append(file_path)
     return path_list
 
+def list_shuffule(ori_list, permu):
+    l = []
+    for i in permu:
+        l.append(ori_list[i])
+    return l
+
+def crop_108(image):
+    h_image, w_image = image.shape[:2]
+    h_crop = 108
+    w_crop = 108
+    top = int((h_image - h_crop )/ 2)
+    left = int((w_image - w_crop) / 2)
+    bottom = top + h_crop
+    right = left + w_crop
+    image = image[top:bottom, left:right]
+    return image
+
 if __name__ == '__main__':
     start = time.time()
     dataset_root_dir = r'E:\50Salads\rgb'
@@ -157,10 +174,20 @@ if __name__ == '__main__':
     video_pathes = create_path_list(dataset_root_dir)
     anno_pathes = create_path_list(annotation_dir)
     time_pathes = create_path_list(timestamp_dir)
-    dataset = Dataset(10, video_pathes, anno_pathes, time_pathes, 0, 40)
-    for i in range(5):
-        begin = time.time()
-        batch, target, finish = next(dataset)
-        end = time.time()
-        print(end-begin)
-    print("total_time", end-start)
+    permu = np.random.permutation(len(video_pathes))
+    video_pathes = list_shuffule(video_pathes, permu)
+    anno_pathes = list_shuffule(anno_pathes, permu)
+    time_pathes = list_shuffule(time_pathes, permu)
+    train = Dataset(600, video_pathes, anno_pathes, time_pathes, 0, 40)
+#    valid = Dataset(200, video_pathes, anno_pathes, time_pathes, 40, 45)
+    t_hist_t = []
+#    t_hist_v = []
+    batch_t, target_t, finish_t = next(train)
+    for i in range(len(batch_t)):
+        print(train.class_uniq[target_t[i]])
+        plt.subplot(121)
+        plt.imshow(np.transpose(batch_t[i], (1, 2, 0))[:, :, :3])
+        plt.subplot(122)
+        plt.imshow(np.transpose(batch_t[i], (1, 2, 0))[:, :, 3])
+        plt.gray()
+        plt.show()
