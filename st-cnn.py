@@ -19,17 +19,17 @@ import chainer.links as L
 
 import cupy as cp
 
+import utility
 from dataset import Dataset
 import dataset
 from links import CBR
-from links import CBRnd
 
 class SpatialConv(chainer.Chain):
     def __init__(self):
         super(SpatialConv, self).__init__(
-            cbr1=CBR(4, 32, ksize=3, pad=1),
-            cbr2= CBR(32, 64, ksize=3, pad=1),
-            cbr3= CBR(64, 128, ksize=3, pad=1),
+            cbr1=CBR(4, 32, 3, stride=1, pad=1),
+            cbr2= CBR(32, 64, 3, stride=1, pad=1),
+            cbr3= CBR(64, 128, 3, stride=1, pad=1),
             fc1=L.Linear(None, 256),
             fc2=L.Linear(256, 18)
         )
@@ -41,19 +41,20 @@ class SpatialConv(chainer.Chain):
         h = F.max_pooling_2d(h, 3)
         h = self.cbr3(h)
         h = F.max_pooling_2d(h, 3)
-        h = F.relu(self.fc4(h))
+        h = F.relu(self.fc1(h))
         h = F.dropout(h)
-        y = self.fc5(h)
+        y = self.fc2(h)
         return y
 
 class TemporalConv(chainer.Chain):
     def __init__(self):
         super(TemporalConv, self).__init__(
-            cbrnd1=CBRnd(2, 1, 18, (20, 18))
+            conv=L.Convolution2D(1, 18, (41, 18), stride=1, pad=(20, 0)),
+            bn=L.BatchNormalization(18)
         )
 
     def __call__(self, x):
-        y = self.cbrnd1(x)
+        y = F.relu(self.bn(self.conv(x)))
         return y
 
 class STConv(chainer.Chain):
@@ -65,7 +66,10 @@ class STConv(chainer.Chain):
 
     def __call__(self, x):
         h = self.spatial(x)
-        y = self.temporal(h)
+        h = h.reshape(1, 1, -1, 18)
+        h = self.temporal(h)
+        y = self.xp.transpose(h.reshape(18, -1), (1, 0))
+        y.data = self.xp.ascontiguousarray(y.data)
         return y
 
     def lossfun(self, x, t):
@@ -111,7 +115,7 @@ if __name__ == '__main__':
 
     # 超パラメータ
     max_iteration = 1500000  # 繰り返し回数
-    batch_size = 300
+    batch_size = 600
     num_train = 40  # 学習データ数
     num_valid = 5  # 検証データ数
     learning_rate = 0.00003  # 学習率
@@ -128,7 +132,7 @@ if __name__ == '__main__':
     time_pathes = dataset.list_shuffule(time_pathes, permu)
     train_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 0, 40)
     valid_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 40, 45)
-    test_data = Dataset(1, video_pathes, anno_pathes, time_pathes, 45, 50)
+    test_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 45, 50)
 
     # 学習結果保存場所
     output_location = r'C:\Users\yamane\OneDrive\M1\SpatialNet'
@@ -149,7 +153,7 @@ if __name__ == '__main__':
     accuracy_filename = os.path.join(output_root_dir, accuracy_filename)
 
     # モデル読み込み
-    model = SpatialConv().to_gpu()
+    model = STConv().to_gpu()
     # Optimizerの設定
     optimizer = optimizers.Adam(learning_rate)
     optimizer.setup(model)
@@ -206,10 +210,8 @@ if __name__ == '__main__':
             print("accuracy[valid_best]:", accuracy_valid_best)
             print("epoch[valid_best]:", epoch__loss_best)
             x, t, finish = next(test_data)
-            permu = np.random.permutation(len(x))
             x = x.astype('f')
             x = cuda.to_gpu(x)
-            t = cuda.to_gpu(t)
             y = model_best.predict(x)
             print('y', test_data.class_uniq[int(cp.argmax(y.data[0]))])
             print('t', test_data.class_uniq[t[0]])
@@ -236,6 +238,8 @@ if __name__ == '__main__':
                 plt.legend(["train", "valid"], loc="lower right")
                 plt.grid()
                 plt.show()
+                utility.plot_bar(y)
+                utility.plot_bar(t)
 
     except KeyboardInterrupt:
         print("割り込み停止が実行されました")
@@ -262,10 +266,8 @@ if __name__ == '__main__':
 
     for data in test_data:
         x, t, finish = data
-        permu = np.random.permutation(len(x))
         x = x.astype('f')
-        x = cuda.to_gpu(x[permu])
-        t = t[permu]
+        x = cuda.to_gpu(x)
         y = model_best.predict(x)
         print('test_num:', i)
         print('y', test_data.class_uniq[int(cp.argmax(y.data[0]))])
@@ -276,6 +278,11 @@ if __name__ == '__main__':
         plt.imshow(np.transpose(cuda.to_cpu(x[0]), (1, 2, 0))[:, :, 3])
         plt.gray()
         plt.show()
+        print('test_num:', i)
+        print('y')
+        utility.plot_bar(y)
+        print('t')
+        utility.plot_bar(t)
         i += 1
         if finish is True:
             break
