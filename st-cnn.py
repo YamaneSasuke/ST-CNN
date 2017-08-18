@@ -12,16 +12,15 @@ import copy
 import numpy as np
 import matplotlib.pyplot as plt
 
+import cupy as cp
+
 import chainer
 from chainer import cuda, optimizers, serializers
 import chainer.functions as F
 import chainer.links as L
 
-import cupy as cp
-
 import utility
 from dataset import Dataset
-import dataset
 from links import CBR
 
 class SpatialConv(chainer.Chain):
@@ -105,6 +104,13 @@ class STConv(chainer.Chain):
 
 if __name__ == '__main__':
     file_name = os.path.splitext(os.path.basename(__file__))[0]
+    # 超パラメータ
+    max_iteration = 1500000  # 繰り返し回数
+    batch_size = 600
+    num_train = 40  # 学習データ数
+    num_valid = 5  # 検証データ数
+    learning_rate = 0.00003  # 学習率
+    # 初期設定
     time_start = time.time()
     epoch_loss = []
     epoch_valid_loss = []
@@ -112,28 +118,6 @@ if __name__ == '__main__':
     epoch_valid_accuracy = []
     loss_valid_best = np.inf
     accuracy_valid_best = 0.0
-
-    # 超パラメータ
-    max_iteration = 1500000  # 繰り返し回数
-    batch_size = 600
-    num_train = 40  # 学習データ数
-    num_valid = 5  # 検証データ数
-    learning_rate = 0.00003  # 学習率
-
-    video_root_dir = r'E:\50Salads\rgb'
-    anno_root_dir = r'E:\50Salads\ann-ts'
-    time_root_dir = r'E:\50Salads\time_stamp'
-    video_pathes = dataset.create_path_list(video_root_dir)
-    anno_pathes = dataset.create_path_list(anno_root_dir)
-    time_pathes = dataset.create_path_list(time_root_dir)
-    permu = np.random.permutation(len(video_pathes))
-    video_pathes = dataset.list_shuffule(video_pathes, permu)
-    anno_pathes = dataset.list_shuffule(anno_pathes, permu)
-    time_pathes = dataset.list_shuffule(time_pathes, permu)
-    train_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 0, 40)
-    valid_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 40, 45)
-    test_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 45, 50)
-
     # 学習結果保存場所
     output_location = r'C:\Users\yamane\OneDrive\M1\SpatialNet'
     # 学習結果保存フォルダ作成
@@ -151,7 +135,20 @@ if __name__ == '__main__':
     model_filename = os.path.join(output_root_dir, model_filename)
     loss_filename = os.path.join(output_root_dir, loss_filename)
     accuracy_filename = os.path.join(output_root_dir, accuracy_filename)
-
+    video_root_dir = r'E:\50Salads\rgb'
+    anno_root_dir = r'E:\50Salads\ann-ts'
+    time_root_dir = r'E:\50Salads\time_stamp'
+    video_pathes = utility.create_path_list(video_root_dir)
+    anno_pathes = utility.create_path_list(anno_root_dir)
+    time_pathes = utility.create_path_list(time_root_dir)
+    permu = np.random.permutation(len(video_pathes))
+    video_pathes = utility.list_shuffule(video_pathes, permu)
+    anno_pathes = utility.list_shuffule(anno_pathes, permu)
+    time_pathes = utility.list_shuffule(time_pathes, permu)
+    # イテレータを作成
+    train_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 0, 40)
+    valid_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 40, 45)
+    test_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 45, 50)
     # モデル読み込み
     model = STConv().to_gpu()
     # Optimizerの設定
@@ -195,7 +192,7 @@ if __name__ == '__main__':
             if loss_valid < loss_valid_best:
                 loss_valid_best = loss_valid
                 accuracy_valid_best = accuracy_valid
-                epoch__loss_best = epoch
+                best_epoch = epoch
                 model_best = copy.deepcopy(model)
 
             # 訓練データでの結果を表示
@@ -205,16 +202,20 @@ if __name__ == '__main__':
             print("loss[train]:", epoch_loss[epoch])
             print("loss[valid]:", loss_valid)
             print("loss[valid_best]:", loss_valid_best)
+            print()
             print("accuracy[train]:", epoch_accuracy[epoch])
             print("accuracy[valid]:", accuracy_valid)
             print("accuracy[valid_best]:", accuracy_valid_best)
-            print("epoch[valid_best]:", epoch__loss_best)
+            print()
+            print("best epoch:", best_epoch)
+
             x, t, finish = next(test_data)
             x = x.astype('f')
             x = cuda.to_gpu(x)
             y = model_best.predict(x)
-            print('y', test_data.class_uniq[int(cp.argmax(y.data[0]))])
-            print('t', test_data.class_uniq[t[0]])
+            print()
+            print('predict:', test_data.class_uniq[int(cp.argmax(y.data[0]))])
+            print('target:', test_data.class_uniq[t[0]])
             plt.subplot(121)
             plt.imshow(np.transpose(cuda.to_cpu(x[0]), (1, 2, 0))[:, :, :3])
             plt.subplot(122)
@@ -223,7 +224,6 @@ if __name__ == '__main__':
             plt.show()
 
             if (epoch % 10) == 0:
-#                plt.figure(figsize=(16, 12))
                 plt.plot(epoch_loss)
                 plt.plot(epoch_valid_loss)
                 plt.title("loss")
@@ -231,7 +231,6 @@ if __name__ == '__main__':
                 plt.grid()
                 plt.show()
 
-#                plt.figure(figsize=(16, 12))
                 plt.plot(epoch_accuracy)
                 plt.plot(epoch_valid_accuracy)
                 plt.title("accuracy")
@@ -244,7 +243,6 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print("割り込み停止が実行されました")
 
-#    plt.figure(figsize=(16, 12))
     plt.plot(epoch_loss)
     plt.plot(epoch_valid_loss)
     plt.title("loss")
@@ -253,7 +251,6 @@ if __name__ == '__main__':
     plt.savefig(loss_filename)
     plt.show()
 
-#    plt.figure(figsize=(16, 12))
     plt.plot(epoch_accuracy)
     plt.plot(epoch_valid_accuracy)
     plt.title("accuracy")
@@ -262,14 +259,11 @@ if __name__ == '__main__':
     plt.savefig(accuracy_filename)
     plt.show()
 
-    i = 0
-
     for data in test_data:
         x, t, finish = data
         x = x.astype('f')
         x = cuda.to_gpu(x)
         y = model_best.predict(x)
-        print('test_num:', i)
         print('y', test_data.class_uniq[int(cp.argmax(y.data[0]))])
         print('t', test_data.class_uniq[t[0]])
         plt.subplot(121)
@@ -278,19 +272,16 @@ if __name__ == '__main__':
         plt.imshow(np.transpose(cuda.to_cpu(x[0]), (1, 2, 0))[:, :, 3])
         plt.gray()
         plt.show()
-        print('test_num:', i)
         print('y')
         utility.plot_bar(y)
         print('t')
         utility.plot_bar(t)
-        i += 1
         if finish is True:
             break
     model_filename = os.path.join(output_root_dir, model_filename)
     serializers.save_npz(model_filename, model_best)
 
-    print('max_iteration:', max_iteration)
+    print('num_iteration:', epoch)
+    print('best_epoch:', best_epoch)
     print('learning_rate:', learning_rate)
-    print('train_size', 200)
-    print('valid_size', 30)
-    print('trim_size', 20)
+    print('batch_size:', batch_size)

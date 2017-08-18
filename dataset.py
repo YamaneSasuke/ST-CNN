@@ -6,11 +6,11 @@ Created on Mon Jul 31 14:56:56 2017
 """
 
 import time
-import os
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 
+import utility
 
 class Dataset(object):
     def __init__(self, batch_size, video_pathes, anno_pathes, time_pathes, start, end):
@@ -71,8 +71,8 @@ class Dataset(object):
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frame_rgb = cv2.resize(frame_rgb, (128, 128))
                 hist_gray = cv2.resize(hist_gray, (128, 128))
-                frame_rgb = crop_108(frame_rgb)
-                hist_gray = crop_108(hist_gray)
+                frame_rgb = utility.crop_108(frame_rgb)
+                hist_gray = utility.crop_108(hist_gray)
                 hist_gray = hist_gray.reshape(108, 108, 1)
                 image = np.concatenate((frame_rgb, hist_gray), axis=2)
                 batches.append(image)
@@ -141,43 +141,18 @@ class Dataset(object):
         return targets
 
 
-def create_path_list(dataset_root_dir):
-    path_list = []
-    for root, dirs, files in os.walk(dataset_root_dir):
-        for file_name in files:
-            file_path = os.path.join(root, file_name)
-            path_list.append(file_path)
-    return path_list
-
-def list_shuffule(ori_list, permu):
-    l = []
-    for i in permu:
-        l.append(ori_list[i])
-    return l
-
-def crop_108(image):
-    h_image, w_image = image.shape[:2]
-    h_crop = 108
-    w_crop = 108
-    top = int((h_image - h_crop )/ 2)
-    left = int((w_image - w_crop) / 2)
-    bottom = top + h_crop
-    right = left + w_crop
-    image = image[top:bottom, left:right]
-    return image
-
 if __name__ == '__main__':
     start = time.time()
     dataset_root_dir = r'E:\50Salads\rgb'
     annotation_dir = r'E:\50Salads\ann-ts'
     timestamp_dir = r'E:\50Salads\time_stamp'
-    video_pathes = create_path_list(dataset_root_dir)
-    anno_pathes = create_path_list(annotation_dir)
-    time_pathes = create_path_list(timestamp_dir)
+    video_pathes = utility.create_path_list(dataset_root_dir)
+    anno_pathes = utility.create_path_list(annotation_dir)
+    time_pathes = utility.create_path_list(timestamp_dir)
     permu = np.random.permutation(len(video_pathes))
-    video_pathes = list_shuffule(video_pathes, permu)
-    anno_pathes = list_shuffule(anno_pathes, permu)
-    time_pathes = list_shuffule(time_pathes, permu)
+    video_pathes = utility.list_shuffule(video_pathes, permu)
+    anno_pathes = utility.list_shuffule(anno_pathes, permu)
+    time_pathes = utility.list_shuffule(time_pathes, permu)
     train = Dataset(600, video_pathes, anno_pathes, time_pathes, 0, 40)
 #    valid = Dataset(200, video_pathes, anno_pathes, time_pathes, 40, 45)
     t_hist_t = []
