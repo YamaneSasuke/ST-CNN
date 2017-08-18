@@ -32,7 +32,7 @@ class Dataset(object):
         self.finish = False
         i = 0
         # モーションの残存期間(sec)
-        DURATION = 1.0
+        DURATION = 2.0
         batches = []
         targets = []
 
