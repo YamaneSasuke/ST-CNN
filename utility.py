@@ -20,7 +20,7 @@ def plot_bar(y):
     if len(y.shape) == 2:
         if y.shape[1] == 1:
             y = y.reshape(-1)
-        elif y.shape[1] == 18:
+        elif y.shape[1] == 10:
             li = []
             for f in range(len(y.data)):
                 for i in range(len(y.data[f])):
@@ -29,7 +29,7 @@ def plot_bar(y):
                 li.append(max_index)
             y = np.stack(li)
     num_features = len(y)
-    num_index = 18
+    num_index = 10
     colors=plt.cm.jet(np.linspace(0,1,num_index))
     for i in range(num_features):
         plt.axvspan(i, i+1, color=colors[int(y[i])])

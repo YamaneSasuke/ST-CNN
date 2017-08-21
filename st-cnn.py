@@ -28,9 +28,10 @@ class SpatialConv(chainer.Chain):
         super(SpatialConv, self).__init__(
             cbr1=CBR(4, 32, 3, stride=1, pad=1),
             cbr2= CBR(32, 64, 3, stride=1, pad=1),
-            cbr3= CBR(64, 128, 3, stride=1, pad=1),
+            cbr3= CBR(64, 96, 3, stride=1, pad=1),
+            cbr4= CBR(96, 128, 3, stride=1, pad=1),
             fc1=L.Linear(None, 256),
-            fc2=L.Linear(256, 18)
+            fc2=L.Linear(256, 10)
         )
 
     def __call__(self, x):
@@ -40,16 +41,19 @@ class SpatialConv(chainer.Chain):
         h = F.max_pooling_2d(h, 3)
         h = self.cbr3(h)
         h = F.max_pooling_2d(h, 3)
+        h = self.cbr4(h)
+        h = F.max_pooling_2d(h, 3)
         h = F.relu(self.fc1(h))
         h = F.dropout(h)
-        y = self.fc2(h)
+        h = self.fc2(h)
+        y= F.dropout(h)
         return y
 
 class TemporalConv(chainer.Chain):
     def __init__(self):
         super(TemporalConv, self).__init__(
-            conv=L.Convolution2D(1, 18, (41, 18), stride=1, pad=(20, 0)),
-            bn=L.BatchNormalization(18)
+            conv=L.Convolution2D(1, 10, (41, 10), stride=1, pad=(20, 0)),
+            bn=L.BatchNormalization(10)
         )
 
     def __call__(self, x):
@@ -65,9 +69,9 @@ class STConv(chainer.Chain):
 
     def __call__(self, x):
         h = self.spatial(x)
-        h = h.reshape(1, 1, -1, 18)
+        h = h.reshape(1, 1, -1, 10)
         h = self.temporal(h)
-        y = self.xp.transpose(h.reshape(18, -1), (1, 0))
+        y = self.xp.transpose(h.reshape(10, -1), (1, 0))
         y.data = self.xp.ascontiguousarray(y.data)
         return y
 
@@ -106,7 +110,7 @@ if __name__ == '__main__':
     file_name = os.path.splitext(os.path.basename(__file__))[0]
     # 超パラメータ
     max_iteration = 1500000  # 繰り返し回数
-    batch_size = 600
+    batch_size = 300
     num_train = 40  # 学習データ数
     num_valid = 5  # 検証データ数
     learning_rate = 0.00003  # 学習率
@@ -237,8 +241,18 @@ if __name__ == '__main__':
                 plt.legend(["train", "valid"], loc="lower right")
                 plt.grid()
                 plt.show()
-                utility.plot_bar(y)
-                utility.plot_bar(t)
+
+                while(True):
+                    x, t, finish = next(test_data)
+                    x = x.astype('f')
+                    x = cuda.to_gpu(x)
+                    y = model_best.predict(x)
+                    print('y')
+                    utility.plot_bar(y)
+                    print('t')
+                    utility.plot_bar(t)
+                    if finish is True:
+                        break
 
     except KeyboardInterrupt:
         print("割り込み停止が実行されました")
@@ -259,25 +273,25 @@ if __name__ == '__main__':
     plt.savefig(accuracy_filename)
     plt.show()
 
-    for data in test_data:
-        x, t, finish = data
-        x = x.astype('f')
-        x = cuda.to_gpu(x)
-        y = model_best.predict(x)
-        print('y', test_data.class_uniq[int(cp.argmax(y.data[0]))])
-        print('t', test_data.class_uniq[t[0]])
-        plt.subplot(121)
-        plt.imshow(np.transpose(cuda.to_cpu(x[0]), (1, 2, 0))[:, :, :3])
-        plt.subplot(122)
-        plt.imshow(np.transpose(cuda.to_cpu(x[0]), (1, 2, 0))[:, :, 3])
-        plt.gray()
-        plt.show()
-        print('y')
-        utility.plot_bar(y)
-        print('t')
-        utility.plot_bar(t)
-        if finish is True:
-            break
+#    while(True):
+#        x, t, finish = test_data.full_video()
+#        x = x.astype('f')
+#        x = cuda.to_gpu(x)
+#        y = model_best.predict(x)
+#        print('y', test_data.class_uniq[int(cp.argmax(y.data[0]))])
+#        print('t', test_data.class_uniq[t[0]])
+#        plt.subplot(121)
+#        plt.imshow(np.transpose(cuda.to_cpu(x[0]), (1, 2, 0))[:, :, :3])
+#        plt.subplot(122)
+#        plt.imshow(np.transpose(cuda.to_cpu(x[0]), (1, 2, 0))[:, :, 3])
+#        plt.gray()
+#        plt.show()
+#        print('y')
+#        utility.plot_bar(y)
+#        print('t')
+#        utility.plot_bar(t)
+#        if finish is True:
+#            break
     model_filename = os.path.join(output_root_dir, model_filename)
     serializers.save_npz(model_filename, model_best)
 
