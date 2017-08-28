@@ -90,8 +90,8 @@ class STConv(chainer.Chain):
             shape = (b, k, t).
         """
         h_td = self.spatial(x_btchw)
-        h_btd = h_td.reshape(x_btchw.shape[0], x_btchw.shape[1], h_td.shape[1])
-        h_bdt = self.xp.transpose(h_btd, (0, 2, 1))
+        h_btd = h_td.reshape(x_btchw.shape[0], h_td.shape[0], h_td.shape[1])
+        h_bdt = h_btd.transpose(0, 2, 1)
         y = self.temporal(h_bdt)
         y.data = self.xp.ascontiguousarray(y.data)
         return y
