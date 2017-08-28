@@ -50,6 +50,9 @@ class Dataset(object):
         frame_pre = frame.copy()
         # motion_historyの初期値
         height, width, channels = frame.shape
+        top = int((128 - 108) / 2)
+        left = int((128 - 108) / 2)
+        flip = np.random.choice([True, False])
         motion_history = np.zeros((height, width), np.float32)
         while(ret):
             # フレーム間の差分計算
@@ -71,8 +74,8 @@ class Dataset(object):
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frame_rgb = cv2.resize(frame_rgb, (128, 128))
                 hist_gray = cv2.resize(hist_gray, (128, 128))
-                frame_rgb = utility.crop_108(frame_rgb)
-                hist_gray = utility.crop_108(hist_gray)
+                frame_rgb = utility.crop_108(frame_rgb, top, left, flip)
+                hist_gray = utility.crop_108(hist_gray, top, left, flip)
                 hist_gray = hist_gray.reshape(108, 108, 1)
                 image = np.concatenate((frame_rgb, hist_gray), axis=2)
                 batches.append(image)
