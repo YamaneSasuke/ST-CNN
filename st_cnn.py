@@ -34,28 +34,34 @@ class SpatialConv(chainer.Chain):
             fc2=L.Linear(256, 128)
         )
 
-    def __call__(self, x_btchw):
+    def __call__(self, x_tchw):
         """
         Args:
-            shape = (b, t, c, h, w).
+            shape = (t, c, h, w).
         Returns:
             shape = (b * t, d).
         """
-        x_tchw = x_btchw.reshape(x_btchw.shape[0]*x_btchw.shape[1],
-                                 x_btchw.shape[2],
-                                 x_btchw.shape[3],
-                                 x_btchw.shape[4])
+#        x_tchw = x_btchw.reshape(x_btchw.shape[1],
+#                                 x_btchw.shape[2],
+#                                 x_btchw.shape[3],
+#                                 x_btchw.shape[4])
         h = self.cbr1(x_tchw)
+        print(self.xp.std(h.data))
         h = F.max_pooling_2d(h, 3)
         h = self.cbr2(h)
+        print(self.xp.std(h.data))
         h = F.max_pooling_2d(h, 3)
         h = self.cbr3(h)
+        print(self.xp.std(h.data))
         h = F.max_pooling_2d(h, 3)
         h = self.cbr4(h)
+        print(self.xp.std(h.data))
         h = F.max_pooling_2d(h, 3)
         h = F.relu(self.fc1(h))
+        print(self.xp.std(h.data))
         h = F.dropout(h)
         h = F.relu(self.fc2(h))
+        print(self.xp.std(h.data))
         y= F.dropout(h)
         return y
 
@@ -82,15 +88,15 @@ class STConv(chainer.Chain):
             temporal=TemporalConv()
         )
 
-    def __call__(self, x_btchw):
+    def __call__(self, x_tchw):
         """
         Args:
-            shape = (b, t, c, h, w).
+            shape = (t, c, h, w).
         Returns:
             shape = (b, k, t).
         """
-        h_td = self.spatial(x_btchw)
-        h_btd = h_td.reshape(x_btchw.shape[0], h_td.shape[0], h_td.shape[1])
+        h_td = self.spatial(x_tchw)
+        h_btd = h_td.reshape(1, h_td.shape[0], h_td.shape[1])
         h_bdt = h_btd.transpose(0, 2, 1)
         y = self.temporal(h_bdt)
         y.data = self.xp.ascontiguousarray(y.data)
@@ -100,22 +106,22 @@ class STConv(chainer.Chain):
         y = self(x)
         loss = F.softmax_cross_entropy(y, t)
         accuracy = F.accuracy(y, t)
-        return loss, accuracy
+        return loss, accuracy, cuda.to_cpu(y.data)
 
     def loss_ave(self, creator):
         losses = []
         accuracies = []
         while(True):
             data = next(creator)
-            x, t, finish = data
-            x_btchw = x.reshape(1, x.shape[0], x.shape[1], x.shape[2], x.shape[3])
+            x_tchw, t, finish = data
+#            x_btchw = x.reshape(1, x.shape[0], x.shape[1], x.shape[2], x.shape[3])
             t_bt = t.reshape(1, t.shape[0])
-            x_btchw = x_btchw.astype('f')
-            x_btchw = cuda.to_gpu(x_btchw)
+            x_tchw = x_tchw.astype('f')
+            x_tchw = cuda.to_gpu(x_tchw)
             t_bt = cuda.to_gpu(t_bt)
             # 順伝播を計算し、誤差と精度を取得
             with chainer.using_config('train', False):
-                loss, accuracy = self.lossfun(x_btchw, t_bt)
+                loss, accuracy = self.lossfun(x_tchw, t_bt)
             # 逆伝搬を計算
             losses.append(cuda.to_cpu(loss.data))
             accuracies.append(cuda.to_cpu(accuracy.data))
@@ -185,9 +191,12 @@ if __name__ == '__main__':
     accuracy_filename = os.path.join(output_root_dir, accuracy_filename)
 
     # イテレータを作成
-    train_data = Dataset(num_frame, video_pathes, anno_pathes, time_pathes, 0, num_train_video)
-    valid_data = Dataset(num_frame, video_pathes, anno_pathes, time_pathes, num_train_video, num_train_video+num_valid_video)
-    test_data = Dataset(num_frame, video_pathes, anno_pathes, time_pathes, num_train_video+num_valid_video, 50)
+    train_data = Dataset(num_frame, video_pathes, anno_pathes, time_pathes,
+                         0, num_train_video)
+    valid_data = Dataset(num_frame, video_pathes, anno_pathes, time_pathes,
+                         num_train_video, num_train_video+num_valid_video)
+    test_data = Dataset(num_frame, video_pathes, anno_pathes, time_pathes,
+                        num_train_video+num_valid_video, 50)
 
     # モデル読み込み
     model = STConv().to_gpu()
@@ -201,24 +210,25 @@ if __name__ == '__main__':
             time_begin = time.time()
             losses = []
             accuracies = []
-            for i in tqdm.tqdm(range(num_train_video)):
-                data = next(train_data)
-                x, t, finish = data
-                x_btchw = x.reshape(batch_size, num_frame, x.shape[1], x.shape[2], x.shape[3])
-                t_bt = t.reshape(batch_size, num_frame)
-                x_btchw = x_btchw.astype('f')
-                x_btchw = cuda.to_gpu(x_btchw)
-                t_bt = cuda.to_gpu(t_bt)
-                # 順伝播を計算し、誤差と精度を取得
-                with chainer.using_config('train', False):
-                    loss, accuracy = model.lossfun(x_btchw, t_bt)
-                # 逆伝搬を計算
-                loss.backward()
-                optimizer.update()
-                losses.append(cuda.to_cpu(loss.data))
-                accuracies.append(cuda.to_cpu(accuracy.data))
-                if finish is True:
-                    break
+            with chainer.using_config('debug', True):
+                for i in tqdm.tqdm(range(num_train_video)):
+                    data = next(train_data)
+                    x, t, finish = data
+    #                x_btchw = x.reshape(batch_size, num_frame, x.shape[1], x.shape[2], x.shape[3])
+                    t_bt = t.reshape(batch_size, num_frame)
+                    x_tchw = x.astype('f')
+                    x_tchw = cuda.to_gpu(x_tchw)
+                    t_bt = cuda.to_gpu(t_bt)
+                    # 順伝播を計算し、誤差と精度を取得
+                    with chainer.using_config('train', False):
+                        loss, accuracy, y = model.lossfun(x_tchw, t_bt)
+                    # 逆伝搬を計算
+                    loss.backward()
+                    optimizer.update()
+                    losses.append(cuda.to_cpu(loss.data))
+                    accuracies.append(cuda.to_cpu(accuracy.data))
+                    if finish is True:
+                        break
             # 訓練データの結果を保持
             time_end = time.time()
             epoch_time = time_end - time_begin
