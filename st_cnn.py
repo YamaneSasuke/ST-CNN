@@ -120,7 +120,7 @@ class STConv(chainer.Chain):
             x_tchw = cuda.to_gpu(x_tchw)
             t_bt = cuda.to_gpu(t_bt)
             # 順伝播を計算し、誤差と精度を取得
-            with chainer.using_config('train', False):
+            with chainer.using_config('train', False), chainer.no_backprop_mode():
                 loss, accuracy = self.lossfun(x_tchw, t_bt)
             # 逆伝搬を計算
             losses.append(cuda.to_cpu(loss.data))
@@ -210,25 +210,25 @@ if __name__ == '__main__':
             time_begin = time.time()
             losses = []
             accuracies = []
-            with chainer.using_config('debug', True):
-                for i in tqdm.tqdm(range(num_train_video)):
-                    data = next(train_data)
-                    x, t, finish = data
-    #                x_btchw = x.reshape(batch_size, num_frame, x.shape[1], x.shape[2], x.shape[3])
-                    t_bt = t.reshape(batch_size, num_frame)
-                    x_tchw = x.astype('f')
-                    x_tchw = cuda.to_gpu(x_tchw)
-                    t_bt = cuda.to_gpu(t_bt)
-                    # 順伝播を計算し、誤差と精度を取得
-                    with chainer.using_config('train', False):
-                        loss, accuracy, y = model.lossfun(x_tchw, t_bt)
+            for i in tqdm.tqdm(range(num_train_video)):
+                data = next(train_data)
+                x, t, finish = data
+                t_bt = t.reshape(batch_size, num_frame)
+                x_tchw = x.astype('f')
+                x_tchw = cuda.to_gpu(x_tchw)
+                t_bt = cuda.to_gpu(t_bt)
+                # 勾配を初期化
+                model.cleargrads()
+                # 順伝播を計算し、誤差と精度を取得
+                with chainer.using_config('train', True):
+                    loss, accuracy, y = model.lossfun(x_tchw, t_bt)
                     # 逆伝搬を計算
                     loss.backward()
-                    optimizer.update()
-                    losses.append(cuda.to_cpu(loss.data))
-                    accuracies.append(cuda.to_cpu(accuracy.data))
-                    if finish is True:
-                        break
+                optimizer.update()
+                losses.append(cuda.to_cpu(loss.data))
+                accuracies.append(cuda.to_cpu(accuracy.data))
+                if finish is True:
+                    break
             # 訓練データの結果を保持
             time_end = time.time()
             epoch_time = time_end - time_begin
@@ -258,11 +258,10 @@ if __name__ == '__main__':
             print()
             print("best epoch:", best_epoch)
             # テストデータの予測結果を表示
-            x, t, finish = next(test_data)
-            x_btchw = x.reshape(batch_size, num_frame, x.shape[1], x.shape[2], x.shape[3])
-            x_btchw = x_btchw.astype('f')
-            x_btchw = cuda.to_gpu(x_btchw)
-            y = model_best.predict(x_btchw)
+            x_tchw, t, finish = next(test_data)
+            x_tchw = x_tchw.astype('f')
+            x_tchw = cuda.to_gpu(x_tchw)
+            y = model_best.predict(x_tchw)
             print()
             print('predict:', test_data.class_uniq[int(cp.argmax(y.data[0][0]))])
             print('target:', test_data.class_uniq[t[0]])
