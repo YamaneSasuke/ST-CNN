@@ -19,6 +19,7 @@ import chainer.functions as F
 import chainer.links as L
 from chainer import cuda, optimizers, serializers
 from chainer.iterators import SerialIterator
+from chainer.iterators import MultiprocessIterator
 
 import utility
 from dataset import Dataset
@@ -99,12 +100,14 @@ class STConv(chainer.Chain):
         accuracy = F.accuracy(y, t)
         return loss, accuracy, cuda.to_cpu(y.data)
 
-    def loss_ave(self, creator):
+    def loss_ave(self, iterator):
         losses = []
         accuracies = []
         while(True):
-            data = next(creator)
-            x_tchw, t, finish = data
+            data = next(iterator)
+            x_tchw = data[0][0]
+            t = data[0][1]
+            finish = data[0][2]
             t_bt = t.reshape(1, t.shape[0])
             x_tchw = x_tchw.astype('f')
             x_tchw = cuda.to_gpu(x_tchw)
@@ -230,7 +233,7 @@ if __name__ == '__main__':
             epoch_loss.append(np.mean(losses))
             epoch_accuracy.append(np.mean(accuracies))
             # 検証データの結果を保持
-            loss_valid, accuracy_valid = model.loss_ave(valid_data)
+            loss_valid, accuracy_valid = model.loss_ave(valid_ite)
             epoch_valid_loss.append(loss_valid)
             epoch_valid_accuracy.append(accuracy_valid)
             if loss_valid < loss_valid_best:
@@ -252,7 +255,10 @@ if __name__ == '__main__':
             print()
             print("best epoch:", best_epoch)
             # テストデータの予測結果を表示
-            x_tchw, t, finish = next(test_data)
+            data = next(test_ite)
+            x_tchw = data[0][0]
+            t = data[0][1]
+            finish = data[0][2]
             x_tchw = x_tchw.astype('f')
             x_tchw = cuda.to_gpu(x_tchw)
             y = model_best.predict(x_tchw)
@@ -280,7 +286,10 @@ if __name__ == '__main__':
                 plt.grid()
                 plt.show()
                 while(True):
-                    x, t, finish = next(test_data)
+                    data = next(test_ite)
+                    x_tchw = data[0][0]
+                    t = data[0][1]
+                    finish = data[0][2]
                     x_btchw = x.reshape(batch_size, num_frame, x.shape[1], x.shape[2], x.shape[3])
                     x_btchw = x_btchw.astype('f')
                     x_btchw = cuda.to_gpu(x_btchw)
