@@ -108,8 +108,8 @@ class STConv(chainer.Chain):
         while(True):
             data = next(creator)
             x, t, finish = data
-            x_btchw = x.reshape(1, 600, 4, 108, 108)
-            t_bt = t.reshape(1, 600)
+            x_btchw = x.reshape(1, x.shape[0], x.shape[1], x.shape[2], x.shape[3])
+            t_bt = t.reshape(1, t.shape[0])
             x_btchw = x_btchw.astype('f')
             x_btchw = cuda.to_gpu(x_btchw)
             t_bt = cuda.to_gpu(t_bt)
@@ -139,12 +139,22 @@ class STConv(chainer.Chain):
 
 if __name__ == '__main__':
     file_name = os.path.splitext(os.path.basename(__file__))[0]
+
     # 超パラメータ
     max_iteration = 1500000  # 繰り返し回数
-    batch_size = 600
-    num_train = 40  # 学習データ数
-    num_valid = 5  # 検証データ数
+    batch_size = 1
+    num_frame = 600
+    num_train_video = 30  # 学習データ数
+    num_valid_video = 15  # 検証データ数
+    num_test_video = 5  # 検証データ数
     learning_rate = 0.00003  # 学習率
+    # 学習結果保存場所
+    output_location = r'C:\Users\yamane\OneDrive\M1\SpatialNet'
+    # 学習データの保存場所
+    video_root_dir = r'E:\50Salads\rgb'
+    anno_root_dir = r'E:\50Salads\ann-ts'
+    time_root_dir = r'E:\50Salads\time_stamp'
+
     # 初期設定
     time_start = time.time()
     epoch_loss = []
@@ -153,8 +163,11 @@ if __name__ == '__main__':
     epoch_valid_accuracy = []
     loss_valid_best = np.inf
     accuracy_valid_best = 0.0
-    # 学習結果保存場所
-    output_location = r'C:\Users\yamane\OneDrive\M1\SpatialNet'
+    best_epoch = 0
+    # 学習データのパスのリストを作成
+    video_pathes = utility.create_path_list(video_root_dir)
+    anno_pathes = utility.create_path_list(anno_root_dir)
+    time_pathes = utility.create_path_list(time_root_dir)
     # 学習結果保存フォルダ作成
     output_root_dir = os.path.join(output_location, file_name)
     folder_name = str(time_start)
@@ -170,16 +183,12 @@ if __name__ == '__main__':
     model_filename = os.path.join(output_root_dir, model_filename)
     loss_filename = os.path.join(output_root_dir, loss_filename)
     accuracy_filename = os.path.join(output_root_dir, accuracy_filename)
-    video_root_dir = r'E:\50Salads\rgb'
-    anno_root_dir = r'E:\50Salads\ann-ts'
-    time_root_dir = r'E:\50Salads\time_stamp'
-    video_pathes = utility.create_path_list(video_root_dir)
-    anno_pathes = utility.create_path_list(anno_root_dir)
-    time_pathes = utility.create_path_list(time_root_dir)
+
     # イテレータを作成
-    train_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 0, 30)
-    valid_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 30, 45)
-    test_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 45, 50)
+    train_data = Dataset(num_frame, video_pathes, anno_pathes, time_pathes, 0, num_train_video)
+    valid_data = Dataset(num_frame, video_pathes, anno_pathes, time_pathes, num_train_video, num_train_video+num_valid_video)
+    test_data = Dataset(num_frame, video_pathes, anno_pathes, time_pathes, num_train_video+num_valid_video, 50)
+
     # モデル読み込み
     model = STConv().to_gpu()
     # Optimizerの設定
@@ -192,11 +201,11 @@ if __name__ == '__main__':
             time_begin = time.time()
             losses = []
             accuracies = []
-            for i in tqdm.tqdm(range(40)):
+            for i in tqdm.tqdm(range(num_train_video)):
                 data = next(train_data)
                 x, t, finish = data
-                x_btchw = x.reshape(1, 600, 4, 108, 108)
-                t_bt = t.reshape(1, 600)
+                x_btchw = x.reshape(batch_size, num_frame, x.shape[1], x.shape[2], x.shape[3])
+                t_bt = t.reshape(batch_size, num_frame)
                 x_btchw = x_btchw.astype('f')
                 x_btchw = cuda.to_gpu(x_btchw)
                 t_bt = cuda.to_gpu(t_bt)
@@ -210,13 +219,13 @@ if __name__ == '__main__':
                 accuracies.append(cuda.to_cpu(accuracy.data))
                 if finish is True:
                     break
-
+            # 訓練データの結果を保持
             time_end = time.time()
             epoch_time = time_end - time_begin
             total_time = time_end - time_origin
             epoch_loss.append(np.mean(losses))
             epoch_accuracy.append(np.mean(accuracies))
-
+            # 検証データの結果を保持
             loss_valid, accuracy_valid = model.loss_ave(valid_data)
             epoch_valid_loss.append(loss_valid)
             epoch_valid_accuracy.append(accuracy_valid)
@@ -225,8 +234,7 @@ if __name__ == '__main__':
                 accuracy_valid_best = accuracy_valid
                 best_epoch = epoch
                 model_best = copy.deepcopy(model)
-
-            # 訓練データでの結果を表示
+            # 訓練データ,検証データの結果を表示
             print()
             print("epoch:", epoch)
             print("time", epoch_time, "(", total_time, ")")
@@ -239,14 +247,14 @@ if __name__ == '__main__':
             print("accuracy[valid_best]:", accuracy_valid_best)
             print()
             print("best epoch:", best_epoch)
-
+            # テストデータの予測結果を表示
             x, t, finish = next(test_data)
-            x_btchw = x.reshape(1, 600, 4, 108, 108)
+            x_btchw = x.reshape(batch_size, num_frame, x.shape[1], x.shape[2], x.shape[3])
             x_btchw = x_btchw.astype('f')
             x_btchw = cuda.to_gpu(x_btchw)
             y = model_best.predict(x_btchw)
             print()
-            print('predict:', test_data.class_uniq[int(cp.argmax(y.data[0]))])
+            print('predict:', test_data.class_uniq[int(cp.argmax(y.data[0][0]))])
             print('target:', test_data.class_uniq[t[0]])
             plt.subplot(121)
             plt.imshow(np.transpose(cuda.to_cpu(x[0]), (1, 2, 0))[:, :, :3])
@@ -254,7 +262,7 @@ if __name__ == '__main__':
             plt.imshow(np.transpose(cuda.to_cpu(x[0]), (1, 2, 0))[:, :, 3])
             plt.gray()
             plt.show()
-
+            # 10エポックごとに学習推移をグラフで表示
             if (epoch % 10) == 0:
                 plt.plot(epoch_loss)
                 plt.plot(epoch_valid_loss)
@@ -262,22 +270,20 @@ if __name__ == '__main__':
                 plt.legend(["train", "valid"], loc="upper right")
                 plt.grid()
                 plt.show()
-
                 plt.plot(epoch_accuracy)
                 plt.plot(epoch_valid_accuracy)
                 plt.title("accuracy")
                 plt.legend(["train", "valid"], loc="lower right")
                 plt.grid()
                 plt.show()
-
                 while(True):
                     x, t, finish = next(test_data)
-                    x_btchw = x.reshape(1, 600, 4, 108, 108)
+                    x_btchw = x.reshape(batch_size, num_frame, x.shape[1], x.shape[2], x.shape[3])
                     x_btchw = x_btchw.astype('f')
                     x_btchw = cuda.to_gpu(x_btchw)
                     y = model_best.predict(x_btchw)
                     print('y')
-                    utility.plot_bar(y)
+                    utility.plot_bar(y[0])
                     print('t')
                     utility.plot_bar(t)
                     if finish is True:
@@ -301,26 +307,7 @@ if __name__ == '__main__':
     plt.grid()
     plt.savefig(accuracy_filename)
     plt.show()
-
-#    while(True):
-#        x, t, finish = test_data.full_video()
-#        x = x.astype('f')
-#        x = cuda.to_gpu(x)
-#        y = model_best.predict(x)
-#        print('y', test_data.class_uniq[int(cp.argmax(y.data[0]))])
-#        print('t', test_data.class_uniq[t[0]])
-#        plt.subplot(121)
-#        plt.imshow(np.transpose(cuda.to_cpu(x[0]), (1, 2, 0))[:, :, :3])
-#        plt.subplot(122)
-#        plt.imshow(np.transpose(cuda.to_cpu(x[0]), (1, 2, 0))[:, :, 3])
-#        plt.gray()
-#        plt.show()
-#        print('y')
-#        utility.plot_bar(y)
-#        print('t')
-#        utility.plot_bar(t)
-#        if finish is True:
-#            break
+    # ベストモデルを保存
     model_filename = os.path.join(output_root_dir, model_filename)
     serializers.save_npz(model_filename, model_best)
 
@@ -328,3 +315,4 @@ if __name__ == '__main__':
     print('best_epoch:', best_epoch)
     print('learning_rate:', learning_rate)
     print('batch_size:', batch_size)
+    print('num_frame:', num_frame)
