@@ -21,7 +21,7 @@ import chainer.links as L
 
 import utility
 from dataset import Dataset
-from links import CBR, CndBR
+from links import CBR
 
 class SpatialConv(chainer.Chain):
     def __init__(self):
@@ -34,14 +34,13 @@ class SpatialConv(chainer.Chain):
             fc2=L.Linear(256, 128)
         )
 
-    def __call__(self, x_bcthw):
+    def __call__(self, x_btchw):
         """
         Args:
             shape = (b, c, t, h, w).
         Returns:
             shape = (b * t, d).
         """
-        x_btchw = self.xp.transpose(x_bcthw, (0, 2, 1, 3, 4))
         x_tchw = x_btchw.reshape(x_btchw.shape[0]*x_btchw.shape[1],
                                  x_btchw.shape[2],
                                  x_btchw.shape[3],
@@ -83,9 +82,9 @@ class STConv(chainer.Chain):
             temporal=TemporalConv()
         )
 
-    def __call__(self, x_bcthw):
-        h_td = self.spatial(x_bcthw)
-        h_btd = h_td.reshape(x_bcthw.shape[0], x_bcthw.shape[2], h_td.shape[1])
+    def __call__(self, x_btchw):
+        h_td = self.spatial(x_btchw)
+        h_btd = h_td.reshape(x_btchw.shape[0], x_btchw.shape[1], h_td.shape[1])
         h_bdt = self.xp.transpose(h_btd, (0, 2, 1))
         y = self.temporal(h_bdt)
         y.data = self.xp.ascontiguousarray(y.data)
@@ -103,12 +102,14 @@ class STConv(chainer.Chain):
         while(True):
             data = next(creator)
             x, t, finish = data
-            x = x.astype('f')
-            x = cuda.to_gpu(x)
-            t = cuda.to_gpu(t)
+            x_btchw = x.reshape(1, 600, 4, 108, 108)
+            t_bt = t.reshape(1, 600)
+            x_btchw = x_btchw.astype('f')
+            x_btchw = cuda.to_gpu(x_btchw)
+            t_bt = cuda.to_gpu(t_bt)
             # 順伝播を計算し、誤差と精度を取得
             with chainer.using_config('train', False):
-                loss, accuracy = self.lossfun(x, t)
+                loss, accuracy = self.lossfun(x_btchw, t_bt)
             # 逆伝搬を計算
             losses.append(cuda.to_cpu(loss.data))
             accuracies.append(cuda.to_cpu(accuracy.data))
@@ -180,14 +181,14 @@ if __name__ == '__main__':
             for i in tqdm.tqdm(range(40)):
                 data = next(train_data)
                 x, t, finish = data
-                x_tchw = x.astype('f')
-                x = cuda.to_gpu(x_tchw)
-                t = cuda.to_gpu(t)
-                # 勾配を初期化
-                model.cleargrads()
+                x_btchw = x.reshape(1, 600, 4, 108, 108)
+                t_bt = t.reshape(1, 600)
+                x_btchw = x_btchw.astype('f')
+                x_btchw = cuda.to_gpu(x_btchw)
+                t_bt = cuda.to_gpu(t_bt)
                 # 順伝播を計算し、誤差と精度を取得
-                with chainer.using_config('train', True):
-                    loss, accuracy = model.lossfun(x, t)
+                with chainer.using_config('train', False):
+                    loss, accuracy = model.lossfun(x_btchw, t_bt)
                 # 逆伝搬を計算
                 loss.backward()
                 optimizer.update()
@@ -226,9 +227,10 @@ if __name__ == '__main__':
             print("best epoch:", best_epoch)
 
             x, t, finish = next(test_data)
-            x = x.astype('f')
-            x = cuda.to_gpu(x)
-            y = model_best.predict(x)
+            x_btchw = x.reshape(1, 600, 4, 108, 108)
+            x_btchw = x_btchw.astype('f')
+            x_btchw = cuda.to_gpu(x_btchw)
+            y = model_best.predict(x_btchw)
             print()
             print('predict:', test_data.class_uniq[int(cp.argmax(y.data[0]))])
             print('target:', test_data.class_uniq[t[0]])
@@ -256,9 +258,10 @@ if __name__ == '__main__':
 
                 while(True):
                     x, t, finish = next(test_data)
-                    x = x.astype('f')
-                    x = cuda.to_gpu(x)
-                    y = model_best.predict(x)
+                    x_btchw = x.reshape(1, 600, 4, 108, 108)
+                    x_btchw = x_btchw.astype('f')
+                    x_btchw = cuda.to_gpu(x_btchw)
+                    y = model_best.predict(x_btchw)
                     print('y')
                     utility.plot_bar(y)
                     print('t')
