@@ -15,9 +15,10 @@ import matplotlib.pyplot as plt
 import cupy as cp
 
 import chainer
-from chainer import cuda, optimizers, serializers
 import chainer.functions as F
 import chainer.links as L
+from chainer import cuda, optimizers, serializers
+from chainer.iterators import SerialIterator
 
 import utility
 from dataset import Dataset
@@ -41,27 +42,17 @@ class SpatialConv(chainer.Chain):
         Returns:
             shape = (b * t, d).
         """
-#        x_tchw = x_btchw.reshape(x_btchw.shape[1],
-#                                 x_btchw.shape[2],
-#                                 x_btchw.shape[3],
-#                                 x_btchw.shape[4])
         h = self.cbr1(x_tchw)
-        print(self.xp.std(h.data))
         h = F.max_pooling_2d(h, 3)
         h = self.cbr2(h)
-        print(self.xp.std(h.data))
         h = F.max_pooling_2d(h, 3)
         h = self.cbr3(h)
-        print(self.xp.std(h.data))
         h = F.max_pooling_2d(h, 3)
         h = self.cbr4(h)
-        print(self.xp.std(h.data))
         h = F.max_pooling_2d(h, 3)
         h = F.relu(self.fc1(h))
-        print(self.xp.std(h.data))
         h = F.dropout(h)
         h = F.relu(self.fc2(h))
-        print(self.xp.std(h.data))
         y= F.dropout(h)
         return y
 
@@ -114,7 +105,6 @@ class STConv(chainer.Chain):
         while(True):
             data = next(creator)
             x_tchw, t, finish = data
-#            x_btchw = x.reshape(1, x.shape[0], x.shape[1], x.shape[2], x.shape[3])
             t_bt = t.reshape(1, t.shape[0])
             x_tchw = x_tchw.astype('f')
             x_tchw = cuda.to_gpu(x_tchw)
@@ -197,7 +187,9 @@ if __name__ == '__main__':
                          num_train_video, num_train_video+num_valid_video)
     test_data = Dataset(num_frame, video_pathes, anno_pathes, time_pathes,
                         num_train_video+num_valid_video, 50)
-
+    train_ite = SerialIterator(train_data, 1)
+    valid_ite = SerialIterator(valid_data, 1)
+    test_ite = SerialIterator(test_data, 1)
     # モデル読み込み
     model = STConv().to_gpu()
     # Optimizerの設定
@@ -211,8 +203,10 @@ if __name__ == '__main__':
             losses = []
             accuracies = []
             for i in tqdm.tqdm(range(num_train_video)):
-                data = next(train_data)
-                x, t, finish = data
+                data = next(train_ite)
+                x = data[0][0]
+                t = data[0][1]
+                finish = data[0][2]
                 t_bt = t.reshape(batch_size, num_frame)
                 x_tchw = x.astype('f')
                 x_tchw = cuda.to_gpu(x_tchw)
