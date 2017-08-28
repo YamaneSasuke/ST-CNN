@@ -13,9 +13,8 @@ class CBR(chainer.Chain):
     def __init__(self, in_channels, out_channels, ksize, stride=1, pad=0,
                  nobias=False, initialW=None, initial_bias=None, **kwargs):
         super(CBR, self).__init__(
-            conv=L.Convolution2D(in_channels, out_channels, ksize,
-                                 stride=1, pad=0, nobias=False, initialW=None,
-                                 initial_bias=None, **kwargs),
+            conv=L.Convolution2D(in_channels, out_channels, ksize, stride, pad,
+                                 nobias, initialW, initial_bias, **kwargs),
             bn=L.BatchNormalization(out_channels)
         )
 
@@ -28,8 +27,8 @@ class CndBR(chainer.Chain):
                  cover_all=False):
         super(CndBR, self).__init__(
             conv=L.ConvolutionND(ndim, in_channels, out_channels, ksize,
-                                 stride=1, pad=0, nobias=False, initialW=None,
-                                 initial_bias=None, cover_all=False),
+                                 stride, pad, nobias, initialW, initial_bias,
+                                 cover_all),
             bn=L.BatchNormalization(out_channels)
         )
 

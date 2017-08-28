@@ -21,7 +21,7 @@ import chainer.links as L
 
 import utility
 from dataset import Dataset
-from links import CBR
+from links import CBR, CndBR
 
 class SpatialConv(chainer.Chain):
     def __init__(self):
@@ -31,11 +31,22 @@ class SpatialConv(chainer.Chain):
             cbr3= CBR(64, 96, 3, stride=1, pad=1),
             cbr4= CBR(96, 128, 3, stride=1, pad=1),
             fc1=L.Linear(None, 256),
-            fc2=L.Linear(256, 10)
+            fc2=L.Linear(256, 128)
         )
 
-    def __call__(self, x):
-        h = self.cbr1(x)
+    def __call__(self, x_bcthw):
+        """
+        Args:
+            shape = (b, c, t, h, w).
+        Returns:
+            shape = (b * t, d).
+        """
+        x_btchw = self.xp.transpose(x_bcthw, (0, 2, 1, 3, 4))
+        x_tchw = x_btchw.reshape(x_btchw.shape[0]*x_btchw.shape[1],
+                                 x_btchw.shape[2],
+                                 x_btchw.shape[3],
+                                 x_btchw.shape[4])
+        h = self.cbr1(x_tchw)
         h = F.max_pooling_2d(h, 3)
         h = self.cbr2(h)
         h = F.max_pooling_2d(h, 3)
@@ -45,19 +56,24 @@ class SpatialConv(chainer.Chain):
         h = F.max_pooling_2d(h, 3)
         h = F.relu(self.fc1(h))
         h = F.dropout(h)
-        h = self.fc2(h)
+        h = F.relu(self.fc2(h))
         y= F.dropout(h)
         return y
 
 class TemporalConv(chainer.Chain):
     def __init__(self):
         super(TemporalConv, self).__init__(
-            conv=L.Convolution2D(1, 10, (41, 10), stride=1, pad=(20, 0)),
-            bn=L.BatchNormalization(10)
+            conv=L.ConvolutionND(1, 128, 10, 41, pad=20),
         )
 
-    def __call__(self, x):
-        y = F.relu(self.bn(self.conv(x)))
+    def __call__(self, x_bdt):
+        """
+        Args:
+            shape = (b, d, t).
+        Returns:
+            shape = (b, k, d).
+        """
+        y = self.conv(x_bdt)
         return y
 
 class STConv(chainer.Chain):
@@ -67,11 +83,11 @@ class STConv(chainer.Chain):
             temporal=TemporalConv()
         )
 
-    def __call__(self, x):
-        h = self.spatial(x)
-        h = h.reshape(1, 1, -1, 10)
-        h = self.temporal(h)
-        y = self.xp.transpose(h.reshape(10, -1), (1, 0))
+    def __call__(self, x_bcthw):
+        h_td = self.spatial(x_bcthw)
+        h_btd = h_td.reshape(x_bcthw.shape[0], x_bcthw.shape[2], h_td.shape[1])
+        h_bdt = self.xp.transpose(h_btd, (0, 2, 1))
+        y = self.temporal(h_bdt)
         y.data = self.xp.ascontiguousarray(y.data)
         return y
 
@@ -110,7 +126,7 @@ if __name__ == '__main__':
     file_name = os.path.splitext(os.path.basename(__file__))[0]
     # 超パラメータ
     max_iteration = 1500000  # 繰り返し回数
-    batch_size = 300
+    batch_size = 600
     num_train = 40  # 学習データ数
     num_valid = 5  # 検証データ数
     learning_rate = 0.00003  # 学習率
@@ -145,13 +161,9 @@ if __name__ == '__main__':
     video_pathes = utility.create_path_list(video_root_dir)
     anno_pathes = utility.create_path_list(anno_root_dir)
     time_pathes = utility.create_path_list(time_root_dir)
-    permu = np.random.permutation(len(video_pathes))
-    video_pathes = utility.list_shuffule(video_pathes, permu)
-    anno_pathes = utility.list_shuffule(anno_pathes, permu)
-    time_pathes = utility.list_shuffule(time_pathes, permu)
     # イテレータを作成
-    train_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 0, 40)
-    valid_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 40, 45)
+    train_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 0, 30)
+    valid_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 30, 45)
     test_data = Dataset(batch_size, video_pathes, anno_pathes, time_pathes, 45, 50)
     # モデル読み込み
     model = STConv().to_gpu()
@@ -168,8 +180,8 @@ if __name__ == '__main__':
             for i in tqdm.tqdm(range(40)):
                 data = next(train_data)
                 x, t, finish = data
-                x = x.astype('f')
-                x = cuda.to_gpu(x)
+                x_tchw = x.astype('f')
+                x = cuda.to_gpu(x_tchw)
                 t = cuda.to_gpu(t)
                 # 勾配を初期化
                 model.cleargrads()
