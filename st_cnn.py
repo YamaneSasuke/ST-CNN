@@ -37,7 +37,7 @@ class SpatialConv(chainer.Chain):
     def __call__(self, x_btchw):
         """
         Args:
-            shape = (b, c, t, h, w).
+            shape = (b, t, c, h, w).
         Returns:
             shape = (b * t, d).
         """
@@ -70,7 +70,7 @@ class TemporalConv(chainer.Chain):
         Args:
             shape = (b, d, t).
         Returns:
-            shape = (b, k, d).
+            shape = (b, k, t).
         """
         y = self.conv(x_bdt)
         return y
@@ -83,6 +83,12 @@ class STConv(chainer.Chain):
         )
 
     def __call__(self, x_btchw):
+        """
+        Args:
+            shape = (b, t, c, h, w).
+        Returns:
+            shape = (b, k, t).
+        """
         h_td = self.spatial(x_btchw)
         h_btd = h_td.reshape(x_btchw.shape[0], x_btchw.shape[1], h_td.shape[1])
         h_bdt = self.xp.transpose(h_btd, (0, 2, 1))
@@ -118,9 +124,17 @@ class STConv(chainer.Chain):
         return np.mean(losses), np.mean(accuracies)
 
     def predict(self, x):
+        """
+        Args:
+            shape = (b, t, c, h, w).
+        Returns:
+            shape = (b, t, k).
+        """
         with chainer.using_config('train', False):
             y = self(x)
-        return F.softmax(y)
+        y_bkt = F.softmax(y)
+        y_btk = self.xp.transpose(y_bkt, (0, 2, 1))
+        return y_btk
 
 
 if __name__ == '__main__':
