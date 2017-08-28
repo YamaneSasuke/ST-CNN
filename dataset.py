@@ -118,19 +118,19 @@ class Dataset(object):
         for l in open(anno_path).readlines():
             data = l[:-1].split(' ')
             class_label = '_'.join(data[2].split('_')[:-1])
-            if data[2] == word1 or data[2] == word2 or data[2] == word3:
+            if data[2] in (word1, word2, word3):
                 continue
-            if class_label == 'serve_salad_onto_plate' or class_label == 'mix_dressing' or class_label == 'mix_ingredients' or class_label == 'add_dressing':
+            if class_label in ('serve_salad_onto_plate', 'mix_dressing', 'mix_ingredients', 'add_dressing'):
                 data[2] = class_label
-            elif class_label == 'peel_cucumber':
+            elif class_label in ('peel_cucumber'):
                 data[2] = 'peel'
-            elif class_label == 'cut_cucumber' or class_label == 'cut_tomato' or class_label == 'cut_cheese' or class_label == 'cut_lettuce':
+            elif class_label in ('cut_cucumber', 'cut_tomato', 'cut_cheese', 'cut_lettuce'):
                 data[2] = 'cut'
-            elif class_label == 'place_cucumber_into_bowl' or class_label == 'place_tomato_into_bowl' or class_label == 'place_cheese_into_bowl' or class_label == 'place_lettuce_into_bowl':
+            elif class_label in ('place_cucumber_into_bowl', 'place_tomato_into_bowl', 'place_cheese_into_bowl', 'place_lettuce_into_bowl'):
                 data[2] = 'place'
-            elif class_label == 'add_oil' or class_label == 'add_vinegar':
+            elif class_label in ('add_oil', 'add_vinegar'):
                 data[2] = 'add_oil'
-            elif class_label == 'add_salt' or class_label == 'add_pepper':
+            elif class_label in ('add_salt', 'add_pepper'):
                 data[2] = 'add_pepper'
             anno_pathes.append(data)
         return anno_pathes
