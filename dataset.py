@@ -159,6 +159,19 @@ class Dataset(chainer.dataset.DatasetMixin):
                 targets[f] = sec[c][2]
         return targets
 
+    def target_distribution(self):
+        l = []
+        dis_list = []
+        for i in range(len(self.anno_pathes)):
+            anno_list = self.create_anno_list(self.anno_pathes[i])
+            time_list = self.create_time_list(self.time_pathes[i])
+            sec = self.create_sec_list(anno_list, time_list)
+            target_list = self.create_target_list(time_list, sec)
+            for n in range(len(target_list)):
+                l.append(target_list[n])
+        for i in range(10):
+            dis_list.append(int(l.count(i) / len(l) * 100))
+        return dis_list
 
 if __name__ == '__main__':
     __spec__ = None
@@ -176,7 +189,7 @@ if __name__ == '__main__':
     train = Dataset(600, video_pathes, anno_pathes, time_pathes, 0, 3)
 
 #    ite = SerialIterator(train, 1)
-    ite = MultiprocessIterator(train, 1, n_processes=7)
+    ite = MultiprocessIterator(train, 1, n_processes=2)
 
     for batch in ite:
         x = batch[0][0]
@@ -184,14 +197,16 @@ if __name__ == '__main__':
         finish = batch[0][2]
         print()
         print('---------------------------------------------------------------')
-        for i in range(len(x)):
-            print(train.class_uniq[t[i]])
-            plt.subplot(121)
-            plt.imshow(np.transpose(x[i], (1, 2, 0))[:, :, :3])
-            plt.subplot(122)
-            plt.imshow(np.transpose(x[i], (1, 2, 0))[:, :, 3])
-            plt.gray()
-            plt.show()
-        print(batch)
+        plt.hist(t)
+        plt.show()
+#        for i in range(len(x)):
+#            print(train.class_uniq[t[i]])
+#            plt.subplot(121)
+#            plt.imshow(np.transpose(x[i], (1, 2, 0))[:, :, :3])
+#            plt.subplot(122)
+#            plt.imshow(np.transpose(x[i], (1, 2, 0))[:, :, 3])
+#            plt.gray()
+#            plt.show()
+#        print(batch)
         print()
     ite.finalize()

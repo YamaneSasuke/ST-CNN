@@ -94,9 +94,9 @@ class STConv(chainer.Chain):
         y.data = self.xp.ascontiguousarray(y.data)
         return y
 
-    def lossfun(self, x, t):
+    def lossfun(self, x, t, class_weight=None):
         y = self(x)
-        loss = F.softmax_cross_entropy(y, t)
+        loss = F.softmax_cross_entropy(y, t, class_weight=class_weight)
         accuracy = F.accuracy(y, t)
         return loss, accuracy
 
@@ -194,9 +194,14 @@ if __name__ == '__main__':
 #    train_ite = SerialIterator(train_data, 1)
 #    valid_ite = SerialIterator(valid_data, 1)
 #    test_ite = SerialIterator(test_data, 1)
-    train_ite = MultiprocessIterator(train_data, 1, n_processes=4)
+    train_ite = MultiprocessIterator(train_data, 1, n_processes=2)
     valid_ite = MultiprocessIterator(valid_data, 1, n_processes=2)
-    test_ite = MultiprocessIterator(test_data, 1, n_processes=1)
+    test_ite = MultiprocessIterator(test_data, 1, n_processes=2)
+    # class_weightを設定
+    dis_list = train_data.target_distribution()
+    cw = cp.ndarray((10,), 'f')
+    for i in range(10):
+        cw[i] = 10 / dis_list[i]
     # モデル読み込み
     model = STConv().to_gpu()
     # Optimizerの設定
@@ -222,7 +227,7 @@ if __name__ == '__main__':
                 model.cleargrads()
                 # 順伝播を計算し、誤差と精度を取得
                 with chainer.using_config('train', True):
-                    loss, accuracy = model.lossfun(x_tchw, t_bt)
+                    loss, accuracy = model.lossfun(x_tchw, t_bt, cw)
                     # 逆伝搬を計算
                     loss.backward()
                 optimizer.update()
