@@ -161,6 +161,7 @@ class Dataset(chainer.dataset.DatasetMixin):
 
 
 if __name__ == '__main__':
+    __spec__ = None
     start = time.time()
     dataset_root_dir = r'E:\50Salads\rgb'
     annotation_dir = r'E:\50Salads\ann-ts'
@@ -174,8 +175,8 @@ if __name__ == '__main__':
     time_pathes = utility.list_shuffule(time_pathes, permu)
     train = Dataset(600, video_pathes, anno_pathes, time_pathes, 0, 3)
 
-    ite = SerialIterator(train, 1)
-#    ite = MultiprocessIterator(train, 1, n_processes=4)
+#    ite = SerialIterator(train, 1)
+    ite = MultiprocessIterator(train, 1, n_processes=7)
 
     for batch in ite:
         x = batch[0][0]

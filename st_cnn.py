@@ -137,6 +137,7 @@ class STConv(chainer.Chain):
 
 
 if __name__ == '__main__':
+    __spec__ = None
     file_name = os.path.splitext(os.path.basename(__file__))[0]
 
     # 超パラメータ
@@ -190,9 +191,12 @@ if __name__ == '__main__':
                          num_train_video, num_train_video+num_valid_video)
     test_data = Dataset(num_frame, video_pathes, anno_pathes, time_pathes,
                         num_train_video+num_valid_video, 50)
-    train_ite = SerialIterator(train_data, 1)
-    valid_ite = SerialIterator(valid_data, 1)
-    test_ite = SerialIterator(test_data, 1)
+#    train_ite = SerialIterator(train_data, 1)
+#    valid_ite = SerialIterator(valid_data, 1)
+#    test_ite = SerialIterator(test_data, 1)
+    train_ite = MultiprocessIterator(train_data, 1, n_processes=4)
+    valid_ite = MultiprocessIterator(valid_data, 1, n_processes=2)
+    test_ite = MultiprocessIterator(test_data, 1, n_processes=1)
     # モデル読み込み
     model = STConv().to_gpu()
     # Optimizerの設定
