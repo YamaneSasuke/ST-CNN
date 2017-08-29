@@ -60,7 +60,7 @@ class SpatialConv(chainer.Chain):
 class TemporalConv(chainer.Chain):
     def __init__(self):
         super(TemporalConv, self).__init__(
-            conv=L.ConvolutionND(1, 128, 10, 41, pad=20),
+            conv=L.ConvolutionND(1, 128, 10, 41),
         )
 
     def __call__(self, x_bdt):
@@ -98,7 +98,7 @@ class STConv(chainer.Chain):
         y = self(x)
         loss = F.softmax_cross_entropy(y, t)
         accuracy = F.accuracy(y, t)
-        return loss, accuracy, cuda.to_cpu(y.data)
+        return loss, accuracy
 
     def loss_ave(self, iterator):
         losses = []
@@ -218,7 +218,7 @@ if __name__ == '__main__':
                 model.cleargrads()
                 # 順伝播を計算し、誤差と精度を取得
                 with chainer.using_config('train', True):
-                    loss, accuracy, y = model.lossfun(x_tchw, t_bt)
+                    loss, accuracy = model.lossfun(x_tchw, t_bt)
                     # 逆伝搬を計算
                     loss.backward()
                 optimizer.update()
@@ -290,10 +290,9 @@ if __name__ == '__main__':
                     x_tchw = data[0][0]
                     t = data[0][1]
                     finish = data[0][2]
-                    x_btchw = x.reshape(batch_size, num_frame, x.shape[1], x.shape[2], x.shape[3])
-                    x_btchw = x_btchw.astype('f')
-                    x_btchw = cuda.to_gpu(x_btchw)
-                    y = model_best.predict(x_btchw)
+                    x_tchw = x_tchw.astype('f')
+                    x_tchw = cuda.to_gpu(x_tchw)
+                    y = model_best.predict(x_tchw)
                     print('y')
                     utility.plot_bar(y[0])
                     print('t')

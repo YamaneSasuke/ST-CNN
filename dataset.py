@@ -33,6 +33,7 @@ class Dataset(chainer.dataset.DatasetMixin):
     def get_example(self, i):
         self.finish = False
         i = 0
+        pad_size = 20
         # モーションの残存期間(sec)
         DURATION = 2.0
         batches = []
@@ -102,8 +103,8 @@ class Dataset(chainer.dataset.DatasetMixin):
         if self.i == self.video_num:
             self.i = 0
             self.finish = True
-        index = np.random.randint(0, len(batches)- self.batch_size)
-        return batches[index: index+self.batch_size], targets[index: index+self.batch_size], self.finish
+        index = np.random.randint(pad_size, len(batches)- self.batch_size - pad_size)
+        return batches[index-pad_size: index+self.batch_size+pad_size], targets[index: index+self.batch_size], self.finish
 
     def create_class_uniq(self):
         class_uniq = []
