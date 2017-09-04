@@ -60,7 +60,7 @@ class SpatialConv(chainer.Chain):
 class TemporalConv(chainer.Chain):
     def __init__(self):
         super(TemporalConv, self).__init__(
-            conv=L.ConvolutionND(1, 128, 10, 41),
+            conv=L.ConvolutionND(1, 128, 18, 41),
         )
 
     def __call__(self, x_bdt):
@@ -194,9 +194,9 @@ if __name__ == '__main__':
 #    train_ite = SerialIterator(train_data, 1)
 #    valid_ite = SerialIterator(valid_data, 1)
 #    test_ite = SerialIterator(test_data, 1)
-    train_ite = MultiprocessIterator(train_data, 1, n_processes=2)
+    train_ite = MultiprocessIterator(train_data, 1, n_processes=4)
     valid_ite = MultiprocessIterator(valid_data, 1, n_processes=2)
-    test_ite = MultiprocessIterator(test_data, 1, n_processes=2)
+    test_ite = MultiprocessIterator(test_data, 1, n_processes=1)
     # class_weightを設定
     dis_list = train_data.target_distribution()
     cw = cp.ndarray((10,), 'f')

@@ -108,7 +108,7 @@ class Dataset(chainer.dataset.DatasetMixin):
 
     def create_class_uniq(self):
         class_uniq = []
-        for l in open(r'E:\50Salads\eval_classes.txt').readlines():
+        for l in open(r'E:\50Salads\mid_classes.txt').readlines():
             data = l[:-1]
             class_uniq.append(data)
         return class_uniq
@@ -126,15 +126,15 @@ class Dataset(chainer.dataset.DatasetMixin):
             if class_label in ('serve_salad_onto_plate', 'mix_dressing', 'mix_ingredients', 'add_dressing'):
                 data[2] = class_label
             elif class_label in ('peel_cucumber'):
-                data[2] = 'peel'
+                data[2] = class_label
             elif class_label in ('cut_cucumber', 'cut_tomato', 'cut_cheese', 'cut_lettuce'):
-                data[2] = 'cut'
+                data[2] = class_label
             elif class_label in ('place_cucumber_into_bowl', 'place_tomato_into_bowl', 'place_cheese_into_bowl', 'place_lettuce_into_bowl'):
-                data[2] = 'place'
+                data[2] = class_label
             elif class_label in ('add_oil', 'add_vinegar'):
-                data[2] = 'add_oil'
+                data[2] = class_label
             elif class_label in ('add_salt', 'add_pepper'):
-                data[2] = 'add_pepper'
+                data[2] = class_label
             anno_pathes.append(data)
         return anno_pathes
 
@@ -175,6 +175,8 @@ class Dataset(chainer.dataset.DatasetMixin):
 
 if __name__ == '__main__':
     __spec__ = None
+    num_frame = 600
+    pad_size = 20
     start = time.time()
     dataset_root_dir = r'E:\50Salads\rgb'
     annotation_dir = r'E:\50Salads\ann-ts'
@@ -186,7 +188,7 @@ if __name__ == '__main__':
     video_pathes = utility.list_shuffule(video_pathes, permu)
     anno_pathes = utility.list_shuffule(anno_pathes, permu)
     time_pathes = utility.list_shuffule(time_pathes, permu)
-    train = Dataset(600, video_pathes, anno_pathes, time_pathes, 0, 3)
+    train = Dataset(num_frame, video_pathes, anno_pathes, time_pathes, 0, 3)
 
 #    ite = SerialIterator(train, 1)
     ite = MultiprocessIterator(train, 1, n_processes=2)
@@ -199,14 +201,14 @@ if __name__ == '__main__':
         print('---------------------------------------------------------------')
         plt.hist(t)
         plt.show()
-#        for i in range(len(x)):
-#            print(train.class_uniq[t[i]])
-#            plt.subplot(121)
-#            plt.imshow(np.transpose(x[i], (1, 2, 0))[:, :, :3])
-#            plt.subplot(122)
-#            plt.imshow(np.transpose(x[i], (1, 2, 0))[:, :, 3])
-#            plt.gray()
-#            plt.show()
-#        print(batch)
+        for i in range(num_frame):
+            print(train.class_uniq[t[i]])
+            plt.subplot(121)
+            plt.imshow(np.transpose(x[i + pad_size], (1, 2, 0))[:, :, :3])
+            plt.subplot(122)
+            plt.imshow(np.transpose(x[i + pad_size], (1, 2, 0))[:, :, 3])
+            plt.gray()
+            plt.show()
+        print(batch)
         print()
     ite.finalize()
