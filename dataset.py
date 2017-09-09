@@ -169,7 +169,7 @@ class Dataset(chainer.dataset.DatasetMixin):
             target_list = self.create_target_list(time_list, sec)
             for n in range(len(target_list)):
                 l.append(target_list[n])
-        for i in range(10):
+        for i in range(18):
             dis_list.append(int(l.count(i) / len(l) * 100))
         return dis_list
 
@@ -199,16 +199,18 @@ if __name__ == '__main__':
         finish = batch[0][2]
         print()
         print('---------------------------------------------------------------')
-        plt.hist(t)
+        plt.hist(t, range=(0, 18))
         plt.show()
-        for i in range(num_frame):
-            print(train.class_uniq[t[i]])
-            plt.subplot(121)
-            plt.imshow(np.transpose(x[i + pad_size], (1, 2, 0))[:, :, :3])
-            plt.subplot(122)
-            plt.imshow(np.transpose(x[i + pad_size], (1, 2, 0))[:, :, 3])
-            plt.gray()
-            plt.show()
-        print(batch)
+        for i in range(len(set(t))):
+            print(train.class_uniq[i])
+#        for i in range(num_frame):
+#            print(train.class_uniq[t[i]])
+#            plt.subplot(121)
+#            plt.imshow(np.transpose(x[i + pad_size], (1, 2, 0))[:, :, :3])
+#            plt.subplot(122)
+#            plt.imshow(np.transpose(x[i + pad_size], (1, 2, 0))[:, :, 3])
+#            plt.gray()
+#            plt.show()
+#        print(batch)
         print()
     ite.finalize()

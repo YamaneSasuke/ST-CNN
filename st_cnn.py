@@ -199,9 +199,9 @@ if __name__ == '__main__':
     test_ite = MultiprocessIterator(test_data, 1, n_processes=1)
     # class_weightを設定
     dis_list = train_data.target_distribution()
-    cw = cp.ndarray((10,), 'f')
-    for i in range(10):
-        cw[i] = 10 / dis_list[i]
+    cw = cp.ndarray((18,), 'f')
+    for i in range(18):
+        cw[i] = 10 / (dis_list[i] + 1)
     # モデル読み込み
     model = STConv().to_gpu()
     # Optimizerの設定
@@ -311,6 +311,10 @@ if __name__ == '__main__':
 
     except KeyboardInterrupt:
         print("割り込み停止が実行されました")
+
+    train_ite.finalize()
+    valid_ite.finalize()
+    test_ite.finalize()
 
     plt.plot(epoch_loss)
     plt.plot(epoch_valid_loss)
