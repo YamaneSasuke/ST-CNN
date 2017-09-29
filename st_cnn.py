@@ -15,9 +15,11 @@ import matplotlib.pyplot as plt
 import cupy as cp
 
 import chainer
-from chainer import cuda, optimizers, serializers
 import chainer.functions as F
 import chainer.links as L
+from chainer import cuda, optimizers, serializers
+from chainer.iterators import SerialIterator
+from chainer.iterators import MultiprocessIterator
 
 import utility
 from dataset import Dataset
@@ -41,34 +43,24 @@ class SpatialConv(chainer.Chain):
         Returns:
             shape = (b * t, d).
         """
-#        x_tchw = x_btchw.reshape(x_btchw.shape[1],
-#                                 x_btchw.shape[2],
-#                                 x_btchw.shape[3],
-#                                 x_btchw.shape[4])
         h = self.cbr1(x_tchw)
-        print(self.xp.std(h.data))
         h = F.max_pooling_2d(h, 3)
         h = self.cbr2(h)
-        print(self.xp.std(h.data))
         h = F.max_pooling_2d(h, 3)
         h = self.cbr3(h)
-        print(self.xp.std(h.data))
         h = F.max_pooling_2d(h, 3)
         h = self.cbr4(h)
-        print(self.xp.std(h.data))
         h = F.max_pooling_2d(h, 3)
         h = F.relu(self.fc1(h))
-        print(self.xp.std(h.data))
         h = F.dropout(h)
         h = F.relu(self.fc2(h))
-        print(self.xp.std(h.data))
         y= F.dropout(h)
         return y
 
 class TemporalConv(chainer.Chain):
     def __init__(self):
         super(TemporalConv, self).__init__(
-            conv=L.ConvolutionND(1, 128, 10, 41, pad=20),
+            conv=L.ConvolutionND(1, 128, 10, 41),
         )
 
     def __call__(self, x_bdt):
@@ -102,19 +94,20 @@ class STConv(chainer.Chain):
         y.data = self.xp.ascontiguousarray(y.data)
         return y
 
-    def lossfun(self, x, t):
+    def lossfun(self, x, t, class_weight=None):
         y = self(x)
-        loss = F.softmax_cross_entropy(y, t)
+        loss = F.softmax_cross_entropy(y, t, class_weight=class_weight)
         accuracy = F.accuracy(y, t)
-        return loss, accuracy, cuda.to_cpu(y.data)
+        return loss, accuracy
 
-    def loss_ave(self, creator):
+    def loss_ave(self, iterator):
         losses = []
         accuracies = []
         while(True):
-            data = next(creator)
-            x_tchw, t, finish = data
-#            x_btchw = x.reshape(1, x.shape[0], x.shape[1], x.shape[2], x.shape[3])
+            data = next(iterator)
+            x_tchw = data[0][0]
+            t = data[0][1]
+            finish = data[0][2]
             t_bt = t.reshape(1, t.shape[0])
             x_tchw = x_tchw.astype('f')
             x_tchw = cuda.to_gpu(x_tchw)
@@ -144,6 +137,7 @@ class STConv(chainer.Chain):
 
 
 if __name__ == '__main__':
+    __spec__ = None
     file_name = os.path.splitext(os.path.basename(__file__))[0]
 
     # 超パラメータ
@@ -197,7 +191,17 @@ if __name__ == '__main__':
                          num_train_video, num_train_video+num_valid_video)
     test_data = Dataset(num_frame, video_pathes, anno_pathes, time_pathes,
                         num_train_video+num_valid_video, 50)
-
+#    train_ite = SerialIterator(train_data, 1)
+#    valid_ite = SerialIterator(valid_data, 1)
+#    test_ite = SerialIterator(test_data, 1)
+    train_ite = MultiprocessIterator(train_data, 1, n_processes=2)
+    valid_ite = MultiprocessIterator(valid_data, 1, n_processes=2)
+    test_ite = MultiprocessIterator(test_data, 1, n_processes=2)
+    # class_weightを設定
+    dis_list = train_data.target_distribution()
+    cw = cp.ndarray((10,), 'f')
+    for i in range(10):
+        cw[i] = 10 / dis_list[i]
     # モデル読み込み
     model = STConv().to_gpu()
     # Optimizerの設定
@@ -211,8 +215,10 @@ if __name__ == '__main__':
             losses = []
             accuracies = []
             for i in tqdm.tqdm(range(num_train_video)):
-                data = next(train_data)
-                x, t, finish = data
+                data = next(train_ite)
+                x = data[0][0]
+                t = data[0][1]
+                finish = data[0][2]
                 t_bt = t.reshape(batch_size, num_frame)
                 x_tchw = x.astype('f')
                 x_tchw = cuda.to_gpu(x_tchw)
@@ -221,7 +227,7 @@ if __name__ == '__main__':
                 model.cleargrads()
                 # 順伝播を計算し、誤差と精度を取得
                 with chainer.using_config('train', True):
-                    loss, accuracy, y = model.lossfun(x_tchw, t_bt)
+                    loss, accuracy = model.lossfun(x_tchw, t_bt, cw)
                     # 逆伝搬を計算
                     loss.backward()
                 optimizer.update()
@@ -236,7 +242,7 @@ if __name__ == '__main__':
             epoch_loss.append(np.mean(losses))
             epoch_accuracy.append(np.mean(accuracies))
             # 検証データの結果を保持
-            loss_valid, accuracy_valid = model.loss_ave(valid_data)
+            loss_valid, accuracy_valid = model.loss_ave(valid_ite)
             epoch_valid_loss.append(loss_valid)
             epoch_valid_accuracy.append(accuracy_valid)
             if loss_valid < loss_valid_best:
@@ -258,7 +264,10 @@ if __name__ == '__main__':
             print()
             print("best epoch:", best_epoch)
             # テストデータの予測結果を表示
-            x_tchw, t, finish = next(test_data)
+            data = next(test_ite)
+            x_tchw = data[0][0]
+            t = data[0][1]
+            finish = data[0][2]
             x_tchw = x_tchw.astype('f')
             x_tchw = cuda.to_gpu(x_tchw)
             y = model_best.predict(x_tchw)
@@ -286,11 +295,13 @@ if __name__ == '__main__':
                 plt.grid()
                 plt.show()
                 while(True):
-                    x, t, finish = next(test_data)
-                    x_btchw = x.reshape(batch_size, num_frame, x.shape[1], x.shape[2], x.shape[3])
-                    x_btchw = x_btchw.astype('f')
-                    x_btchw = cuda.to_gpu(x_btchw)
-                    y = model_best.predict(x_btchw)
+                    data = next(test_ite)
+                    x_tchw = data[0][0]
+                    t = data[0][1]
+                    finish = data[0][2]
+                    x_tchw = x_tchw.astype('f')
+                    x_tchw = cuda.to_gpu(x_tchw)
+                    y = model_best.predict(x_tchw)
                     print('y')
                     utility.plot_bar(y[0])
                     print('t')

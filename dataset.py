@@ -10,9 +10,13 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 
+import chainer
+from chainer.iterators import SerialIterator
+from chainer.iterators import MultiprocessIterator
+
 import utility
 
-class Dataset(object):
+class Dataset(chainer.dataset.DatasetMixin):
     def __init__(self, batch_size, video_pathes, anno_pathes, time_pathes, start, end):
         self.batch_size = batch_size
         self.start = start
@@ -24,13 +28,12 @@ class Dataset(object):
         self.i = 0
         self.class_uniq = self.create_class_uniq()
         self.finish = False
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
+    def __len__(self):
+        return (self.end - self.start)
+    def get_example(self, i):
         self.finish = False
         i = 0
+        pad_size = 20
         # モーションの残存期間(sec)
         DURATION = 2.0
         batches = []
@@ -100,8 +103,8 @@ class Dataset(object):
         if self.i == self.video_num:
             self.i = 0
             self.finish = True
-        index = np.random.randint(0, len(batches)- self.batch_size)
-        return batches[index: index + self.batch_size], targets[index: index + self.batch_size], self.finish
+        index = np.random.randint(pad_size, len(batches)- self.batch_size - pad_size)
+        return batches[index-pad_size: index+self.batch_size+pad_size], targets[index: index+self.batch_size], self.finish
 
     def create_class_uniq(self):
         class_uniq = []
@@ -156,78 +159,22 @@ class Dataset(object):
                 targets[f] = sec[c][2]
         return targets
 
-    def full_video(self):
-        self.finish = False
-        i = 0
-        # モーションの残存期間(sec)
-        DURATION = 2.0
-        batches = []
-        targets = []
-
-        anno_list = self.create_anno_list(self.anno_pathes[self.i])
-        time_list = self.create_time_list(self.time_pathes[self.i])
-        sec = self.create_sec_list(anno_list, time_list)
-        target_list = self.create_target_list(time_list, sec)
-
-        # ビデオのフレーム数を取得
-        cap = cv2.VideoCapture(self.video_pathes[self.i])
-        # フレームレートを取得
-        frame_rate = cap.get(cv2.CAP_PROP_FPS)
-        quater_frame_rate = int(frame_rate / 4)
-        ret, frame = cap.read()
-        frame_pre = frame.copy()
-        # motion_historyの初期値
-        height, width, channels = frame.shape
-        motion_history = np.zeros((height, width), np.float32)
-        while(ret):
-            # フレーム間の差分計算
-            color_diff = cv2.absdiff(frame, frame_pre)
-            # グレースケール変換
-            gray_diff = cv2.cvtColor(color_diff, cv2.COLOR_BGR2GRAY)
-            # ２値化
-            retval, black_diff = cv2.threshold(gray_diff, 30, 1, cv2.THRESH_BINARY)
-            # プロセッサ処理時間(sec)を取得
-            proc_time = time.clock()
-            # モーション履歴画像の更新
-            cv2.motempl.updateMotionHistory(black_diff, motion_history, proc_time, DURATION)
-            if (i % quater_frame_rate) == 0:
-                # 古いモーションの表示を経過時間に応じて薄くする
-                hist_color = np.array(np.clip((motion_history - (proc_time - DURATION)) / DURATION, 0, 1) * 255, np.uint8)
-                # グレースケール変換
-    #                hist_gray = cv2.cvtColor(hist_color, cv2.COLOR_GRAY2BGR)
-                hist_gray = hist_color
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frame_rgb = cv2.resize(frame_rgb, (128, 128))
-                hist_gray = cv2.resize(hist_gray, (128, 128))
-                frame_rgb = utility.crop_108(frame_rgb)
-                hist_gray = utility.crop_108(hist_gray)
-                hist_gray = hist_gray.reshape(108, 108, 1)
-                image = np.concatenate((frame_rgb, hist_gray), axis=2)
-                batches.append(image)
-                targets.append(target_list[i])
-
-            # 次のフレームの読み込み
-            frame_pre = frame.copy()
-            ret, frame = cap.read()
-            i += 1
-
-        # 終了処理
-        cv2.destroyAllWindows()
-        cap.release()
-
-        batches = np.stack(batches, axis=0)
-        targets = np.stack(targets, axis=0)
-        batches = np.transpose(batches, (0, 3, 1, 2))
-        batches = batches / 255.0
-        targets = targets.astype(np.int32)
-
-        self.i += 1
-        if self.i == self.video_num:
-            self.i = 0
-            self.finish = True
-        return batches, targets, self.finish
+    def target_distribution(self):
+        l = []
+        dis_list = []
+        for i in range(len(self.anno_pathes)):
+            anno_list = self.create_anno_list(self.anno_pathes[i])
+            time_list = self.create_time_list(self.time_pathes[i])
+            sec = self.create_sec_list(anno_list, time_list)
+            target_list = self.create_target_list(time_list, sec)
+            for n in range(len(target_list)):
+                l.append(target_list[n])
+        for i in range(10):
+            dis_list.append(int(l.count(i) / len(l) * 100))
+        return dis_list
 
 if __name__ == '__main__':
+    __spec__ = None
     start = time.time()
     dataset_root_dir = r'E:\50Salads\rgb'
     annotation_dir = r'E:\50Salads\ann-ts'
@@ -239,16 +186,27 @@ if __name__ == '__main__':
     video_pathes = utility.list_shuffule(video_pathes, permu)
     anno_pathes = utility.list_shuffule(anno_pathes, permu)
     time_pathes = utility.list_shuffule(time_pathes, permu)
-    train = Dataset(600, video_pathes, anno_pathes, time_pathes, 0, 40)
-#    valid = Dataset(200, video_pathes, anno_pathes, time_pathes, 40, 45)
-    t_hist_t = []
-#    t_hist_v = []
-    batch_t, target_t, finish_t = next(train)
-    for i in range(len(batch_t)):
-        print(train.class_uniq[target_t[i]])
-        plt.subplot(121)
-        plt.imshow(np.transpose(batch_t[i], (1, 2, 0))[:, :, :3])
-        plt.subplot(122)
-        plt.imshow(np.transpose(batch_t[i], (1, 2, 0))[:, :, 3])
-        plt.gray()
+    train = Dataset(600, video_pathes, anno_pathes, time_pathes, 0, 3)
+
+#    ite = SerialIterator(train, 1)
+    ite = MultiprocessIterator(train, 1, n_processes=2)
+
+    for batch in ite:
+        x = batch[0][0]
+        t = batch[0][1]
+        finish = batch[0][2]
+        print()
+        print('---------------------------------------------------------------')
+        plt.hist(t)
         plt.show()
+#        for i in range(len(x)):
+#            print(train.class_uniq[t[i]])
+#            plt.subplot(121)
+#            plt.imshow(np.transpose(x[i], (1, 2, 0))[:, :, :3])
+#            plt.subplot(122)
+#            plt.imshow(np.transpose(x[i], (1, 2, 0))[:, :, 3])
+#            plt.gray()
+#            plt.show()
+#        print(batch)
+        print()
+    ite.finalize()
